@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+X-Sailfish-ApplicationType=Silica
+Icon=harbour-etoro
+Exec=harbour-etoro
+Name=eToro (Client)
+Comment=Sailfish Os Client for eToro trading account
+
+
+[X-Sailjail]
+Sandboxing=Disabled
