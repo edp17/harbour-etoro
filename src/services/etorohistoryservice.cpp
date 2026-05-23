@@ -1,5 +1,6 @@
 #include "etorohistoryservice.h"
 #include "../networkutils.h"
+#include "../applog.h"
 
 #include <QNetworkReply>
 #include <QJsonDocument>
@@ -17,6 +18,7 @@ EtoroHistoryService::EtoroHistoryService(QNetworkAccessManager *nam, QObject *pa
 void EtoroHistoryService::fetchTradeHistory(const QString &apiKey,
                                             const QString &userKey,
                                             const QString &minDateIso,
+                                            bool dateOnlyMinDate,
                                             int page,
                                             int pageSize)
 {
@@ -27,7 +29,17 @@ void EtoroHistoryService::fetchTradeHistory(const QString &apiKey,
 
     QUrl url = req.url();
     QUrlQuery query(url);
-    query.addQueryItem(QStringLiteral("minDate"), minDateIso);
+
+    QString minDateValue = minDateIso;
+
+    if (dateOnlyMinDate) {
+        const int tIndex = minDateValue.indexOf(QLatin1Char('T'));
+        if (tIndex > 0)
+            minDateValue = minDateValue.left(tIndex);
+    }
+
+    query.addQueryItem(QStringLiteral("minDate"), minDateValue);
+
     query.addQueryItem(QStringLiteral("page"), QString::number(page));
     query.addQueryItem(QStringLiteral("pageSize"), QString::number(pageSize));
     url.setQuery(query);
@@ -40,9 +52,11 @@ void EtoroHistoryService::fetchTradeHistory(const QString &apiKey,
         const QByteArray body = reply->readAll();
         const QNetworkReply::NetworkError netError = reply->error();
         reply->deleteLater();
-
-        qWarning() << "ETORO HISTORY STATUS:" << httpStatus;
-        qWarning() << "ETORO HISTORY BODY:" << body;
+        if (AppLog::debugEnabled())
+        {
+            qWarning() << "ETORO HISTORY STATUS:" << httpStatus;
+            qWarning() << "ETORO HISTORY BODY:" << body;
+        }
 
         if (netError != QNetworkReply::NoError) {
             emit requestFailed(reply->errorString(), httpStatus, body);

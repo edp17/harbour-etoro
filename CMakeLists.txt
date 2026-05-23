@@ -35,6 +35,7 @@ set(SOURCES
     src/etoroclient.cpp
     src/tokenstore.cpp
     src/networkutils.cpp
+    src/applog.cpp
     src/services/etoroportfolioservice.cpp
     src/services/etoromarketservice.cpp
     src/services/etorotradingservice.cpp
@@ -46,6 +47,7 @@ set(HEADERS
     src/etoroclient.h
     src/tokenstore.h
     src/networkutils.h
+    src/applog.h
     src/services/etoroportfolioservice.h
     src/services/etoromarketservice.h
     src/services/etorotradingservice.h
@@ -117,12 +119,22 @@ install(FILES
     qml/pages/HistoryPage.qml
     qml/pages/TradeDetailPage.qml
     qml/pages/StatisticsPage.qml
+    qml/pages/DiscoverPage.qml
     DESTINATION /usr/share/harbour-etoro/qml/pages
 )
 
 install(FILES
     qml/components/UnlockOverlay.qml
     qml/components/PriceFlashValue.qml
+    qml/components/OpenPositionOverlay.qml
+    qml/components/PurchaseSubmittedOverlay.qml
+    qml/components/TradePriceActionRow.qml
+    qml/components/ClosePositionOverlay.qml
+    qml/components/RenameWatchlistOverlay.qml
+    qml/components/DeleteWatchlistOverlay.qml
+    qml/components/RemoveFromWatchlistOverlay.qml
+    qml/components/AddToWatchlistOverlay.qml
+    qml/components/HistoryCustomRangeOverlay.qml
     DESTINATION /usr/share/harbour-etoro/qml/components
 )
 

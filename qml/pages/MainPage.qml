@@ -81,6 +81,11 @@ Page {
                 }
             }
             MenuItem {
+                text: qsTr("Discover")
+                enabled: !etoroClient.locked && etoroClient.hasCredentials
+                onClicked: pageStack.push(Qt.resolvedUrl("DiscoverPage.qml"))
+            }
+            MenuItem {
                 text: qsTr("Watchlists")
                 enabled: etoroClient.hasCredentials && !etoroClient.busy
                 onClicked: {
@@ -91,7 +96,7 @@ Page {
             }
             MenuItem {
                 text: qsTr("History")
-                enabled: etoroClient.hasCredentials && !etoroClient.busy
+                enabled: !etoroClient.demoMode && etoroClient.hasCredentials && !etoroClient.busy
                 onClicked: {
                     etoroClient.registerUserActivity()
                     pageStack.push(Qt.resolvedUrl("HistoryPage.qml"))
@@ -135,8 +140,8 @@ Page {
                     anchors.top: pageHeader.bottom
                     anchors.topMargin: -Theme.paddingLarge
                     text: etoroClient.tradingEnabled
-                           ? qsTr("Trading")
-                           : qsTr("Read-only")
+                           ? qsTr("Trading (%1)").arg(etoroClient.accountModeLabel)
+                           : qsTr("View only (%1)").arg(etoroClient.accountModeLabel)
                     color: etoroClient.tradingEnabled ? Theme.highlightColor : Theme.primaryColor
                     font.pixelSize: Theme.fontSizeSmall
                     font.bold: etoroClient.tradingEnabled ? true : false
@@ -244,11 +249,11 @@ Page {
                 text: qsTr("Top positions")
                 color: Theme.primaryColor
                 font.pixelSize: Theme.fontSizeMedium
-                visible: etoroClient.topPositions.length > 0
+                visible: etoroClient.topGroupedPositions.length > 0
             }
 
             Repeater {
-                model: etoroClient.topPositions
+                model: etoroClient.topGroupedPositions
 
                 delegate: BackgroundItem {
                     width: parent ? parent.width : page.width
@@ -338,7 +343,7 @@ Page {
             Button {
                 x: Theme.horizontalPageMargin
                 width: parent.width - 2 * x
-                visible: etoroClient.openPositions.length > 4
+                visible: etoroClient.groupedOpenPositions.length > 4
                 text: qsTr("View all positions")
                 onClicked: {
                     etoroClient.registerUserActivity()
@@ -354,7 +359,9 @@ Page {
                 color: Theme.rgba(Theme.highlightBackgroundColor, 0.10)
                 border.width: 1
                 border.color: Theme.rgba(Theme.highlightColor, 0.18)
-                visible: !etoroClient.hasCredentials || etoroClient.busy || etoroClient.lastError.length > 0
+                visible: (!etoroClient.hasCredentials && !etoroClient.locked)
+                         || etoroClient.busy
+                         || etoroClient.lastError.length > 0
 
                 Column {
                     id: statusColumn
@@ -365,7 +372,7 @@ Page {
 
                     Label {
                         width: parent.width
-                        visible: !etoroClient.hasCredentials
+                        visible: !etoroClient.hasCredentials && !etoroClient.locked
                         text: qsTr("No API credentials saved yet. Open Settings and add your API key and user key.")
                         color: Theme.primaryColor
                         wrapMode: Text.Wrap

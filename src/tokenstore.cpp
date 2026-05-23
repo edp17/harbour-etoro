@@ -20,6 +20,12 @@ static const char *SETTINGS_KEY_HAS_API_KEY = "hasStoredApiKey";
 static const char *SETTINGS_KEY_HAS_USER_KEY = "hasStoredUserKey";
 static const char *SETTINGS_KEY_HAS_PIN = "hasStoredPin";
 
+static const char *SECRET_REAL_USER_KEY = "etoro-real-user-key";
+static const char *SECRET_DEMO_USER_KEY = "etoro-demo-user-key";
+
+static const char *SETTINGS_KEY_HAS_REAL_USER_KEY = "hasStoredRealUserKey";
+static const char *SETTINGS_KEY_HAS_DEMO_USER_KEY = "hasStoredDemoUserKey";
+
 static Sailfish::Secrets::Secret::Identifier tokenIdentifier(const QString &secretName)
 {
     return Sailfish::Secrets::Secret::Identifier(
@@ -173,6 +179,87 @@ void TokenStore::writeFlag(const QString &key, bool value)
     settings.sync();
 }
 
+bool TokenStore::saveRealUserKey(const QString &value)
+{
+    if (!saveSecret(QString::fromLatin1(SECRET_REAL_USER_KEY), value))
+        return false;
+
+    writeFlag(QString::fromLatin1(SETTINGS_KEY_HAS_REAL_USER_KEY), true);
+    return true;
+}
+
+bool TokenStore::saveDemoUserKey(const QString &value)
+{
+    if (!saveSecret(QString::fromLatin1(SECRET_DEMO_USER_KEY), value))
+        return false;
+
+    writeFlag(QString::fromLatin1(SETTINGS_KEY_HAS_DEMO_USER_KEY), true);
+    return true;
+}
+
+QString TokenStore::realUserKey() const
+{
+    QString value = loadSecret(QString::fromLatin1(SECRET_REAL_USER_KEY));
+
+    // Backwards compatibility: old single user key is treated as Real user key.
+    if (value.isEmpty())
+        value = userKey();
+
+    return value;
+}
+
+QString TokenStore::demoUserKey() const
+{
+    return loadSecret(QString::fromLatin1(SECRET_DEMO_USER_KEY));
+}
+
+bool TokenStore::clearRealUserKey()
+{
+    if (!clearSecret(QString::fromLatin1(SECRET_REAL_USER_KEY)))
+        return false;
+
+    writeFlag(QString::fromLatin1(SETTINGS_KEY_HAS_REAL_USER_KEY), false);
+    return true;
+}
+
+bool TokenStore::clearDemoUserKey()
+{
+    if (!clearSecret(QString::fromLatin1(SECRET_DEMO_USER_KEY)))
+        return false;
+
+    writeFlag(QString::fromLatin1(SETTINGS_KEY_HAS_DEMO_USER_KEY), false);
+    return true;
+}
+
+bool TokenStore::hasApiKey() const
+{
+    return readFlag(QString::fromLatin1(SETTINGS_KEY_HAS_API_KEY)) && !apiKey().isEmpty();
+}
+
+bool TokenStore::hasRealUserKey() const
+{
+    if (readFlag(QString::fromLatin1(SETTINGS_KEY_HAS_REAL_USER_KEY)) && !realUserKey().isEmpty())
+        return true;
+
+    // Backwards compatibility.
+    return readFlag(QString::fromLatin1(SETTINGS_KEY_HAS_USER_KEY)) && !userKey().isEmpty();
+}
+
+bool TokenStore::hasDemoUserKey() const
+{
+    return readFlag(QString::fromLatin1(SETTINGS_KEY_HAS_DEMO_USER_KEY)) && !demoUserKey().isEmpty();
+}
+
+bool TokenStore::hasCredentialsForMode(bool demo) const
+{
+    return hasApiKey() && (demo ? hasDemoUserKey() : hasRealUserKey());
+}
+
+QString TokenStore::userKeyForMode(bool demo) const
+{
+    return demo ? demoUserKey() : realUserKey();
+}
+
 bool TokenStore::saveApiKey(const QString &value)
 {
     if (!saveSecret(QString::fromLatin1(SECRET_API_KEY), value))
@@ -203,18 +290,28 @@ QString TokenStore::userKey() const
 
 bool TokenStore::clearAll()
 {
-    const bool a = clearSecret(QString::fromLatin1(SECRET_API_KEY));
-    const bool b = clearSecret(QString::fromLatin1(SECRET_USER_KEY));
-    const bool c = clearSecret(QString::fromLatin1(SECRET_APP_PIN));
+    const bool oldApi = clearSecret(QString::fromLatin1(SECRET_API_KEY));
+    const bool oldUser = clearSecret(QString::fromLatin1(SECRET_USER_KEY));
+    const bool realUser = clearSecret(QString::fromLatin1(SECRET_REAL_USER_KEY));
+    const bool demoUser = clearSecret(QString::fromLatin1(SECRET_DEMO_USER_KEY));
+    const bool pin = clearSecret(QString::fromLatin1(SECRET_APP_PIN));
 
-    if (a)
+    if (oldApi)
         writeFlag(QString::fromLatin1(SETTINGS_KEY_HAS_API_KEY), false);
-    if (b)
+
+    if (oldUser)
         writeFlag(QString::fromLatin1(SETTINGS_KEY_HAS_USER_KEY), false);
-    if (c)
+
+    if (realUser)
+        writeFlag(QString::fromLatin1(SETTINGS_KEY_HAS_REAL_USER_KEY), false);
+
+    if (demoUser)
+        writeFlag(QString::fromLatin1(SETTINGS_KEY_HAS_DEMO_USER_KEY), false);
+
+    if (pin)
         writeFlag(QString::fromLatin1(SETTINGS_KEY_HAS_PIN), false);
 
-    return a && b && c;
+    return oldApi && oldUser && realUser && demoUser && pin;
 }
 
 bool TokenStore::hasCredentials() const

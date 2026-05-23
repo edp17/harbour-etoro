@@ -28,6 +28,37 @@ Page {
     property bool readOnlyMode: !etoroClient.tradingEnabled
     property bool submitAttempted: false
 
+    function restrictionValue(key) {
+        if (page.positionData && page.positionData[key] !== undefined)
+            return page.positionData[key]
+
+        if (page.instrumentData && page.instrumentData[key] !== undefined)
+            return page.instrumentData[key]
+
+        var cached = etoroClient.restrictionsForInstrument(page.effectiveInstrumentId)
+        if (cached && cached[key] !== undefined)
+            return cached[key]
+
+        return undefined
+    }
+
+    function buyRestrictedReason() {
+        if (page.restrictionValue("tradingDisabled") === true)
+            return qsTr("Trading is disabled for this market.")
+
+        if (page.restrictionValue("isBuyEnabled") === false)
+            return qsTr("Buying is not available for this market.")
+
+        if (page.restrictionValue("isCurrentlyTradable") === false)
+            return qsTr("This market is not currently tradable.")
+
+        return ""
+    }
+
+    function buyAllowed() {
+        return page.buyRestrictedReason() === ""
+    }
+
     property bool hasPositionData: {
         return positionData
                 && positionData.positionId !== undefined
@@ -56,9 +87,28 @@ Page {
         return String(v)
     }
 
-    property string pageTitle: hasPositionData
-                               ? (isBuyPosition() ? qsTr("Buy position") : qsTr("Sell position"))
-                               : qsTr("Open position")
+    function instrumentTypeName(typeId) {
+        typeId = Number(typeId || 0)
+
+        switch (typeId) {
+        case 1: return qsTr("Currencies")
+        case 2: return qsTr("Commodities")
+        case 4: return qsTr("Indices")
+        case 5: return qsTr("Stocks")
+        case 6: return qsTr("ETFs")
+        case 10: return qsTr("Crypto")
+        default: return qsTr("Other")
+        }
+    }
+
+    function calculatedPageTitle() {
+        if (hasPositionData)
+            return isBuyPosition()
+                    ? qsTr("Buy position (%1)").arg(etoroClient.accountModeLabel)
+                    : qsTr("Sell position (%1)").arg(etoroClient.accountModeLabel)
+
+        return qsTr("Open position (%1)").arg(etoroClient.accountModeLabel)
+    }
 
     function isBuyPosition() {
         var v = positionData.isBuy
@@ -198,7 +248,7 @@ Page {
 
                 PageHeader {
                     id: pageHeader
-                    title: page.pageTitle
+                    title: page.calculatedPageTitle()
                     width: parent.width
                 }
 
@@ -328,6 +378,17 @@ Page {
 
                             Label {
                                 width: parent.width
+                                text: page.instrumentTypeName(page.hasPositionData
+                                                              ? page.positionData.instrumentTypeId
+                                                              : page.instrumentData.instrumentTypeId)
+                                color: Theme.secondaryColor
+                                font.pixelSize: Theme.fontSizeSmall
+                                horizontalAlignment: Text.AlignRight
+                                truncationMode: TruncationMode.Fade
+                            }
+
+                            Label {
+                                width: parent.width
                                 visible: page.hasPositionData
                                 text: amountText(netValue(), 2)
                                 color: Number(positionData.netProfit || 0) >= 0 ? Theme.highlightColor : Theme.errorColor
@@ -344,58 +405,54 @@ Page {
                         color: Theme.rgba(Theme.primaryColor, 0.50)
                     }
 
-                    Item {
+                    // Sell -----
+                    TradePriceActionRow {
                         width: parent.width
-                        height: openPositionSellLabel.height
-
-                        Label {
-                            id: openPositionSellLabel
-                            anchors.left: parent.left
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("Sell:")
-                            color: Theme.primaryColor
-                            font.pixelSize: Theme.fontSizeSmall
-                        }
-
-                        PriceFlashValue {
-                            id: openPositionSellValue
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            rawValue: (page.liveQuote() || {}).ask
-                            decimals: 4
-                            textColor: Theme.secondaryColor
-                            fontSize: Theme.fontSizeSmall
+                        sideText: qsTr("Sell")
+                        rawValue: (page.liveQuote() || {}).ask
+                        decimals: 4
+                        tradingEnabled: etoroClient.tradingEnabled
+                        actionEnabled: page.hasPositionData && !etoroClient.busy
+                        textColor: Theme.secondaryColor
+                        onClicked: {
+                            closePositionOverlay.open()
+                            etoroClient.registerUserActivity()
                         }
                     }
 
-                    Item {
+                    // Buy -----
+                    TradePriceActionRow {
                         width: parent.width
-                        height: openPositionBuyLabel.height
+                        sideText: qsTr("Buy")
+                        rawValue: (page.liveQuote() || {}).bid
+                        decimals: 4
+                        tradingEnabled: etoroClient.tradingEnabled
+                        actionEnabled: page.buyAllowed()
+                        textColor: Theme.secondaryColor
+                        onClicked: {
+                            if (!page.buyAllowed()) {
+                                etoroClient.clearLastError()
+                                return
+                            }
 
-                        Label {
-                            id: openPositionBuyLabel
-                            anchors.left: parent.left
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("Buy:")
-                            color: Theme.primaryColor
-                            font.pixelSize: Theme.fontSizeSmall
-                        }
-
-                        PriceFlashValue {
-                            id: openPositionBuyValue
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            rawValue: (page.liveQuote() || {}).bid
-                            decimals: 4
-                            textColor: Theme.secondaryColor
-                            fontSize: Theme.fontSizeSmall
+                            openPositionOverlay.open()
+                            etoroClient.registerUserActivity()
                         }
                     }
 
                     Label {
                         width: parent.width
+                        visible: page.buyRestrictedReason() !== ""
+                        text: page.buyRestrictedReason()
+                        color: Theme.errorColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    Label {
+                        width: parent.width
                         visible: page.submitAttempted && !page.hasPositionData
-                        text: qsTr("UI entry is ready. Live order submission has not been implemented yet.")
+                        text: qsTr("Enter order details to continue.")
                         color: Theme.secondaryColor
                         font.pixelSize: Theme.fontSizeSmall
                         wrapMode: Text.Wrap
@@ -510,6 +567,55 @@ Page {
                     }
                 }
             }
+
+// Temp ----
+//SectionHeader {
+//    text: qsTr("Protection test")
+//    visible: etoroClient.tradingEnabled
+//}
+//
+//TextField {
+//    id: testStopLossField
+//    width: parent.width
+//    visible: etoroClient.tradingEnabled
+//    label: qsTr("New Stop Loss")
+//    placeholderText: qsTr("Optional")
+//    inputMethodHints: Qt.ImhFormattedNumbersOnly
+//}
+//
+//TextField {
+//    id: testTakeProfitField
+//    width: parent.width
+//    visible: etoroClient.tradingEnabled
+//    label: qsTr("New Take Profit")
+//    placeholderText: qsTr("Optional")
+//    inputMethodHints: Qt.ImhFormattedNumbersOnly
+//}
+//
+//Button {
+//    width: parent.width
+//    visible: etoroClient.tradingEnabled
+//    enabled: !etoroClient.busy
+//    text: etoroClient.busy ? qsTr("Submitting…") : qsTr("Test SL/TP update")
+//
+//    onClicked: {
+//        etoroClient.updatePositionProtection(page.positionData, {
+//            "stopLoss": testStopLossField.text,
+//            "takeProfit": testTakeProfitField.text
+//        })
+//        etoroClient.registerUserActivity()
+//    }
+//}
+//
+//Label {
+//    width: parent.width
+//    visible: etoroClient.tradingEnabled && etoroClient.lastError !== ""
+//    text: etoroClient.lastError
+//    color: etoroClient.lastError.indexOf("updated") >= 0 ? Theme.highlightColor : Theme.errorColor
+//    font.pixelSize: Theme.fontSizeSmall
+//    wrapMode: Text.Wrap
+//}
+// Temp ----
 
             Rectangle {
                 x: Theme.horizontalPageMargin
@@ -747,7 +853,7 @@ Page {
                                 id: instrumentIdLabel
                                 anchors.left: parent.left
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: qsTr("Instrument ID")
+                                text: qsTr("Asset ID")
                                 color: Theme.secondaryColor
                                 font.pixelSize: Theme.fontSizeSmall
                             }
@@ -772,5 +878,38 @@ Page {
         }
 
         VerticalScrollDecorator { }
+    }
+
+    //Open position overlay
+    OpenPositionOverlay {
+        id: openPositionOverlay
+
+        instrumentId: Number(page.effectiveInstrumentId || 0)
+        symbol: page.effectiveSymbol || ""
+        displayName: page.effectiveDisplayName || ""
+        unitPrice: (page.liveQuote() || {}).bid
+
+        onOrderSubmitted: {
+            purchaseSubmittedOverlay.open()
+        }
+    }
+
+    // Purchase submitted overlay
+    PurchaseSubmittedOverlay {
+        id: purchaseSubmittedOverlay
+    }
+
+    // Sell (Close position) overlay
+    ClosePositionOverlay {
+        id: closePositionOverlay
+        positionData: page.positionData
+        symbol: page.effectiveSymbol
+        displayName: page.effectiveDisplayName
+        currentValueText: page.amountText(page.netValue(), 2)
+
+        onCloseSubmitted: {
+            pageStack.previousPage().showCloseSuccess(closePositionOverlay.partialClose)
+            pageStack.pop()
+        }
     }
 }

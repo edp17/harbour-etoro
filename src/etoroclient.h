@@ -55,6 +55,7 @@ class EtoroClient : public QObject
     Q_PROPERTY(QString portfolioFilterText READ portfolioFilterText WRITE setPortfolioFilterText NOTIFY portfolioUiChanged)
 
     Q_PROPERTY(QVariantList groupedOpenPositions READ groupedOpenPositions NOTIFY groupedOpenPositionsChanged)
+    Q_PROPERTY(QVariantList topGroupedPositions READ topGroupedPositions NOTIFY groupedOpenPositionsChanged)
 
     Q_PROPERTY(QString historyFilterText READ historyFilterText WRITE setHistoryFilterText NOTIFY historyUiChanged)
     Q_PROPERTY(QString statisticsSortMode READ statisticsSortMode WRITE setStatisticsSortMode NOTIFY statisticsUiChanged)
@@ -70,9 +71,38 @@ class EtoroClient : public QObject
     Q_PROPERTY(QString portfolioColumn3 READ portfolioColumn3 WRITE setPortfolioColumn3 NOTIFY portfolioColumnsChanged)
 
     Q_PROPERTY(bool tradingEnabled READ tradingEnabled WRITE setTradingEnabled NOTIFY tradingModeChanged)
+    Q_PROPERTY(bool liveOrderSubmissionEnabled READ liveOrderSubmissionEnabled WRITE setLiveOrderSubmissionEnabled NOTIFY tradingModeChanged)
 
     Q_PROPERTY(QString apiKey READ apiKey NOTIFY credentialsChanged)
     Q_PROPERTY(QString userKey READ userKey NOTIFY credentialsChanged)
+
+    Q_PROPERTY(QString realUserKey READ realUserKey NOTIFY credentialsChanged)
+    Q_PROPERTY(QString demoUserKey READ demoUserKey NOTIFY credentialsChanged)
+    Q_PROPERTY(bool hasRealCredentials READ hasRealCredentials NOTIFY credentialsChanged)
+    Q_PROPERTY(bool hasDemoCredentials READ hasDemoCredentials NOTIFY credentialsChanged)
+
+    Q_PROPERTY(bool demoMode READ demoMode WRITE setDemoMode NOTIFY accountModeChanged)
+    Q_PROPERTY(QString accountModeLabel READ accountModeLabel NOTIFY accountModeChanged)
+
+    Q_PROPERTY(QString realUserKey READ realUserKey NOTIFY credentialsChanged)
+    Q_PROPERTY(QString demoUserKey READ demoUserKey NOTIFY credentialsChanged)
+    Q_PROPERTY(bool hasRealCredentials READ hasRealCredentials NOTIFY credentialsChanged)
+    Q_PROPERTY(bool hasDemoCredentials READ hasDemoCredentials NOTIFY credentialsChanged)
+
+    Q_PROPERTY(QVariantList discoverResults READ discoverResults NOTIFY discoverResultsChanged)
+    Q_PROPERTY(bool discoverLoading READ discoverLoading NOTIFY discoverResultsChanged)
+
+    Q_PROPERTY(QVariantMap discoverQuotes READ discoverQuotes NOTIFY discoverQuotesChanged)
+    Q_PROPERTY(bool discoverQuotesLoading READ discoverQuotesLoading NOTIFY discoverQuotesChanged)
+
+    Q_PROPERTY(QString discoverSearchText READ discoverSearchText WRITE setDiscoverSearchText NOTIFY discoverSearchTextChanged)
+    Q_PROPERTY(bool debugLoggingEnabled READ debugLoggingEnabled WRITE setDebugLoggingEnabled NOTIFY debugLoggingChanged)
+    Q_PROPERTY(QVariantList instrumentWatchlistMatches READ instrumentWatchlistMatches NOTIFY instrumentWatchlistMatchesChanged)
+    Q_PROPERTY(bool instrumentWatchlistLookupActive READ instrumentWatchlistLookupActive NOTIFY instrumentWatchlistMatchesChanged)
+
+    Q_PROPERTY(QString historyCustomFromDate READ historyCustomFromDate WRITE setHistoryCustomFromDate NOTIFY historyUiChanged)
+    Q_PROPERTY(bool historyCustomRangeEnabled READ historyCustomRangeEnabled WRITE setHistoryCustomRangeEnabled NOTIFY historyUiChanged)
+    Q_PROPERTY(QString historyCustomToDate READ historyCustomToDate WRITE setHistoryCustomToDate NOTIFY historyUiChanged)
 
 public:
     explicit EtoroClient(QObject *parent = nullptr);
@@ -114,6 +144,7 @@ public:
     QString portfolioFilterText() const;
 
     QVariantList groupedOpenPositions() const;
+    QVariantList topGroupedPositions() const;
 
     QString historyFilterText() const;
     QString statisticsSortMode() const;
@@ -122,11 +153,56 @@ public:
     QString apiKey() const;
     QString userKey() const;
 
+    QString realUserKey() const;
+    QString demoUserKey() const;
+
+    bool hasRealCredentials() const;
+    bool hasDemoCredentials() const;
+
+    QVariantList discoverResults() const;
+    bool discoverLoading() const;
+
+    QVariantMap discoverQuotes() const;
+    bool discoverQuotesLoading() const;
+
+    QString discoverSearchText() const;
+    void setDiscoverSearchText(const QString &text);
+
     bool tradingEnabled() const;
     Q_INVOKABLE void setTradingEnabled(bool enabled);
 
+    bool liveOrderSubmissionEnabled() const;
+    Q_INVOKABLE void setLiveOrderSubmissionEnabled(bool enabled);
+
+    bool debugLoggingEnabled() const;
+    Q_INVOKABLE void setDebugLoggingEnabled(bool enabled);
+
+    bool demoMode() const;
+    Q_INVOKABLE void setDemoMode(bool enabled);
+    Q_INVOKABLE QString accountModePathSegment() const;
+
+    bool instrumentWatchlistLookupActive() const;
+
+    QVariantList instrumentWatchlistMatches() const;
+    Q_INVOKABLE void findWatchlistsForInstrument(const QVariant &instrumentId);
+
+    Q_INVOKABLE void saveApiKey(const QString &apiKey);
+    Q_INVOKABLE void saveUserKeyForMode(bool demo, const QString &userKey);
+    Q_INVOKABLE void clearUserKeyForMode(bool demo);
+    Q_INVOKABLE QString accountModeLabel() const;
+
     int quoteRefreshIntervalSeconds() const;
     Q_INVOKABLE void setQuoteRefreshIntervalSeconds(int seconds);
+
+    QString historyCustomFromDate() const;
+    bool historyCustomRangeEnabled() const;
+    QString historyCustomToDate() const;
+    Q_INVOKABLE void setHistoryCustomToDate(const QString &value);
+
+    Q_INVOKABLE void setHistoryCustomFromDate(const QString &value);
+    Q_INVOKABLE void setHistoryCustomRangeEnabled(bool value);
+    Q_INVOKABLE void applyHistoryCustomRange();
+    Q_INVOKABLE void clearHistoryCustomRange();
 
     Q_INVOKABLE void setPortfolioShowFilter(bool value);
     Q_INVOKABLE void setPortfolioShowSort(bool value);
@@ -179,6 +255,28 @@ public:
     Q_INVOKABLE void setPortfolioColumn2(const QString &value);
     Q_INVOKABLE void setPortfolioColumn3(const QString &value);
 
+    Q_INVOKABLE bool prepareMarketOrder(const QVariantMap &order);
+    Q_INVOKABLE bool closePosition(const QVariantMap &position, const QString &unitsToDeduct = QString());
+    Q_INVOKABLE void clearLastError();
+
+    Q_INVOKABLE bool updatePositionProtection(const QVariantMap &position, const QVariantMap &protection);
+
+    Q_INVOKABLE void searchDiscoverInstruments(const QString &query);
+    Q_INVOKABLE void clearDiscoverResults();
+
+    Q_INVOKABLE QVariantMap quoteForDiscoverInstrument(const QVariant &instrumentId) const;
+    Q_INVOKABLE void refreshDiscoverQuotes();
+
+    Q_INVOKABLE bool addInstrumentToWatchlist(const QString &watchlistId, const QVariantMap &instrument);
+    Q_INVOKABLE bool createWatchlist(const QString &name);
+    Q_INVOKABLE bool currentWatchlistContainsInstrument(const QVariant &instrumentId) const;
+    Q_INVOKABLE bool removeInstrumentFromWatchlist(const QString &watchlistId, const QVariantMap &instrument);
+    Q_INVOKABLE bool renameWatchlist(const QString &watchlistId, const QString &name);
+    Q_INVOKABLE bool deleteWatchlist(const QString &watchlistId);
+    Q_INVOKABLE QVariantMap currentWatchlistItemForInstrument(const QVariant &instrumentId) const;
+
+    Q_INVOKABLE QVariantMap restrictionsForInstrument(const QVariant &instrumentId) const;
+
 signals:
     void credentialsChanged();
     void busyChanged();
@@ -204,21 +302,29 @@ signals:
     void quoteRefreshSettingsChanged();
     void portfolioColumnsChanged();
     void tradingModeChanged();
+    void accountModeChanged();
+    void positionCloseSubmitted();
+    void discoverResultsChanged();
+    void watchlistItemAdded();
+    void watchlistCreated(const QString &watchlistId, const QString &name);
+    void watchlistItemRemoved();
+    void watchlistRenamed(const QString &watchlistId, const QString &name);
+    void watchlistDeleted(const QString &watchlistId);
+    void discoverQuotesChanged();
+    void discoverSearchTextChanged();
+    void debugLoggingChanged();
+    void instrumentWatchlistMatchesChanged();
 
 private:
     enum MetadataTarget {
         MetadataNone,
         MetadataPositions,
         MetadataWatchlistItems,
-        MetadataTradeHistory
+        MetadataTradeHistory,
+        MetadataWatchlistLookup
     };
 
-    enum RatesTarget {
-        RatesNone,
-        RatesSelectedInstrument,
-        RatesWatchlistItems,
-        RatesPositions
-    };
+    enum RatesTarget { RatesNone, RatesSelectedInstrument, RatesWatchlistItems, RatesPositions, RatesDiscover };
 
     void setBusy(bool value);
     void setLocked(bool value);
@@ -244,6 +350,21 @@ private:
 
     void reloadCachedCredentials();
     void clearCachedCredentials();
+
+    QVariantList m_instrumentWatchlistMatches;
+    QVariantList m_watchlistLookupQueue;
+    int m_watchlistLookupInstrumentId = 0;
+    bool m_watchlistLookupActive = false;
+
+    QString m_pendingLookupWatchlistId;
+    QString m_pendingLookupWatchlistName;
+
+    QString m_historyCustomFromDate;
+    bool m_historyCustomRangeEnabled = false;
+    QString m_historyCustomToDate;
+
+    void rememberInstrumentRestrictions(const QVariantList &items);
+    void applyInstrumentRestrictions(QVariantMap &item) const;
 
 private:
     TokenStore m_tokenStore;
@@ -291,6 +412,19 @@ private:
 
     QString m_cachedApiKey;
     QString m_cachedUserKey;
+
+    QVariantList m_discoverResults;
+    bool m_discoverLoading = false;
+
+    QVariantMap m_discoverQuotes;
+    bool m_discoverQuotesLoading = false;
+
+    QString m_discoverSearchText;
+
+    bool m_debugLoggingEnabled = false;
+    void loadNextWatchlistForInstrumentLookup();
+
+    QVariantMap m_instrumentRestrictionsById;
 };
 
 #endif // ETOROCLIENT_H

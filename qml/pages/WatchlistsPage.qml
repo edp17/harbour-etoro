@@ -29,6 +29,11 @@ Page {
     property string filterText: etoroClient.watchlistFilterText
     property var filteredItems: []
     property bool readOnlyMode: !etoroClient.tradingEnabled
+    property bool reloadSelectedAfterWatchlistsRefresh: false
+    property string reloadSelectedWatchlistId: ""
+    property bool renameWatchlistVisible: false
+    property string renameWatchlistText: ""
+    property string renameWatchlistError: ""
 
     function numberText(v, decimals) {
         if (v === undefined || v === null || v === "")
@@ -137,6 +142,24 @@ Page {
         target: etoroClient
 
         onWatchlistsChanged: {
+            if (page.reloadSelectedAfterWatchlistsRefresh) {
+                page.reloadSelectedAfterWatchlistsRefresh = false
+
+                var wantedId = page.reloadSelectedWatchlistId
+                page.reloadSelectedWatchlistId = ""
+
+                for (var i = 0; i < etoroClient.watchlists.length; ++i) {
+                    var wl = etoroClient.watchlists[i]
+                    if (String(wl.watchlistId || "") === wantedId) {
+                        page.selectedWatchlistId = String(wl.watchlistId || "")
+                        page.selectedWatchlistName = String(wl.name || "")
+                        watchlistCombo.currentIndex = i
+                        etoroClient.loadWatchlist(page.selectedWatchlistId, page.selectedWatchlistName)
+                        return
+                    }
+                }
+            }
+
             page.ensureSelectedWatchlist()
         }
 
@@ -175,8 +198,24 @@ Page {
                 enabled: !etoroClient.busy && !etoroClient.locked
                 onClicked: {
                     etoroClient.registerUserActivity()
+                    page.reloadSelectedAfterWatchlistsRefresh = true
+                    page.reloadSelectedWatchlistId = page.selectedWatchlistId
                     etoroClient.refreshWatchlists()
                 }
+            }
+            MenuItem {
+                text: qsTr("Discover")
+                onClicked: pageStack.push(Qt.resolvedUrl("DiscoverPage.qml"))
+            }
+            MenuItem {
+                text: qsTr("Rename watchlist")
+                enabled: !etoroClient.busy && page.selectedWatchlistId !== ""
+                onClicked: renameWatchlistOverlay.open()
+            }
+            MenuItem {
+                text: qsTr("Delete watchlist")
+                enabled: !etoroClient.busy && page.selectedWatchlistId !== ""
+                onClicked: deleteWatchlistOverlay.open()
             }
         }
 
@@ -186,7 +225,7 @@ Page {
             spacing: Theme.paddingMedium
 
             PageHeader {
-                title: qsTr("Watchlists")
+                title: qsTr("Watchlists (%1)").arg(etoroClient.accountModeLabel)
             }
 
             Rectangle {
@@ -335,8 +374,8 @@ Page {
                         width: parent.width
                         visible: !etoroClient.watchlistItemsLoading && page.filteredItems.length === 0
                         text: page.filterText.trim().length > 0
-                              ? qsTr("No items match the current filter.")
-                              : qsTr("No items in this watchlist.")
+                              ? qsTr("No asset match the current filter.")
+                              : qsTr("No assets in this watchlist.")
                         color: Theme.secondaryColor
                         font.pixelSize: Theme.fontSizeSmall
                         wrapMode: Text.Wrap
@@ -402,7 +441,9 @@ Page {
                     onClicked: {
                         etoroClient.registerUserActivity()
                         pageStack.push(Qt.resolvedUrl("WatchlistDetailPage.qml"), {
-                            instrumentData: modelData
+                            instrumentData: modelData,
+                            watchlistId: page.selectedWatchlistId,
+                            watchlistName: page.selectedWatchlistName
                         })
                     }
 
@@ -501,5 +542,30 @@ Page {
         }
 
         VerticalScrollDecorator { }
+    }
+
+    // Rename watchlist overlay
+    RenameWatchlistOverlay {
+        id: renameWatchlistOverlay
+        watchlistId: page.selectedWatchlistId
+        watchlistName: page.selectedWatchlistName
+
+        onRenamed: {
+            page.reloadSelectedAfterWatchlistsRefresh = true
+            page.reloadSelectedWatchlistId = watchlistId
+        }
+    }
+
+    // Delete watchlist overlay
+    DeleteWatchlistOverlay {
+        id: deleteWatchlistOverlay
+        watchlistId: page.selectedWatchlistId
+        watchlistName: page.selectedWatchlistName
+
+        onDeleted: {
+            page.selectedWatchlistId = ""
+            page.selectedWatchlistName = ""
+            page.reloadSelectedAfterWatchlistsRefresh = false
+        }
     }
 }

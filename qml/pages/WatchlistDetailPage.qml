@@ -26,6 +26,97 @@ Page {
     property var instrumentData: ({ })
     property bool readOnlyMode: !etoroClient.tradingEnabled
 
+    property string watchlistId: ""
+    property string watchlistName: ""
+    property bool openedFromWatchlist: false
+
+    function restrictionValue(key) {
+        if (page.instrumentData && page.instrumentData[key] !== undefined)
+            return page.instrumentData[key]
+
+        var cached = etoroClient.restrictionsForInstrument(page.instrumentData.instrumentId)
+        if (cached && cached[key] !== undefined)
+            return cached[key]
+
+        return undefined
+    }
+
+    function mergeInstrumentDataPreservingRestrictions(newData) {
+        if (!newData)
+            return page.instrumentData
+
+        var merged = {}
+        var key
+
+        for (key in page.instrumentData)
+            merged[key] = page.instrumentData[key]
+
+        for (key in newData)
+            merged[key] = newData[key]
+
+        var restrictionKeys = [
+            "isBuyEnabled",
+            "isCurrentlyTradable",
+            "isExchangeOpen",
+            "tradingDisabled"
+        ]
+
+        for (var i = 0; i < restrictionKeys.length; ++i) {
+            key = restrictionKeys[i]
+
+            if ((newData[key] === undefined || newData[key] === null || newData[key] === "")
+                    && page.instrumentData[key] !== undefined) {
+                merged[key] = page.instrumentData[key]
+            }
+        }
+
+        return merged
+    }
+
+    function applyWatchlistMatches() {
+        var matches = etoroClient.instrumentWatchlistMatches || []
+
+        if (matches.length === 0)
+            return
+
+        var first = matches[0]
+
+        page.instrumentData = page.mergeInstrumentDataPreservingRestrictions(first)
+        page.watchlistName = String(first.watchlistName || "")
+
+        if (page.openedFromWatchlist)
+            page.watchlistId = String(first.watchlistId || "")
+    }
+
+    function enrichFromCurrentWatchlistIfPossible() {
+        if (page.watchlistId !== "")
+            return
+
+        var item = etoroClient.currentWatchlistItemForInstrument(page.instrumentData.instrumentId)
+        if (!item || (item.instrumentId === undefined && item.itemId === undefined))
+            return
+
+        page.instrumentData = page.mergeInstrumentDataPreservingRestrictions(item)
+        page.watchlistName = etoroClient.currentWatchlistName
+    }
+
+    function buyRestrictedReason() {
+        if (page.restrictionValue("tradingDisabled") === true)
+            return qsTr("Trading is disabled for this market.")
+
+        if (page.restrictionValue("isBuyEnabled") === false)
+            return qsTr("Buying is not available for this market.")
+
+        if (page.restrictionValue("isCurrentlyTradable") === false)
+            return qsTr("This market is not currently tradable.")
+
+        return ""
+    }
+
+    function buyAllowed() {
+        return page.buyRestrictedReason() === ""
+    }
+
     function valueText(v) {
         return (v === undefined || v === null || v === "") ? "—" : String(v)
     }
@@ -36,13 +127,20 @@ Page {
         return Number(v).toLocaleString(Qt.locale(), 'f', decimals)
     }
 
-    function instrumentIcon50(instrumentId) {
-        if (instrumentId === undefined || instrumentId === null || instrumentId === "")
+    function instrumentIcon50(instrument) {
+        if (instrument.logoUrl)
+            return instrument.logoUrl
+        if (instrument.logo50x50)
+            return instrument.logo50x50
+        if (instrument.logo35x35)
+            return instrument.logo35x35
+        if (instrument.logo150x150)
+            return instrument.logo150x150
+
+        if (instrument.instrumentId === undefined || instrument.instrumentId === null || instrument.instrumentId === "")
             return ""
 
-        return "https://etoro-cdn.etorostatic.com/market-avatars/"
-                + String(instrumentId)
-                + "/50x50.png"
+        return "https://etoro-cdn.etorostatic.com/market-avatars/" + String(instrument.instrumentId) + "/50x50.png"
     }
 
     Timer {
@@ -63,14 +161,20 @@ Page {
 
     Component.onCompleted: {
         etoroClient.loadInstrumentQuote(instrumentData)
+        page.openedFromWatchlist = page.watchlistId !== ""
     }
 
     onStatusChanged: {
-        if (status === PageStatus.Active
-                && page.instrumentData
-                && page.instrumentData.instrumentId !== undefined) {
+        if (status === PageStatus.Active)
+            page.enrichFromCurrentWatchlistIfPossible()
+
+        if (status === PageStatus.Active && page.watchlistId !== "")
+        {
             etoroClient.loadInstrumentQuote(page.instrumentData)
         }
+
+        if (status === PageStatus.Active && page.watchlistId === "")
+            etoroClient.findWatchlistsForInstrument(page.instrumentData.instrumentId)
     }
 
     Component.onDestruction: {
@@ -89,20 +193,25 @@ Page {
             }
             MenuItem {
                 visible: etoroClient.tradingEnabled
-                enabled: etoroClient.tradingEnabled
+                enabled: etoroClient.tradingEnabled && page.buyAllowed()
 
-                text: qsTr("Open position")
+                text: qsTr("Buy")
 
                 onClicked: {
-                    pageStack.push(Qt.resolvedUrl("OpenPositionPage.qml"), {
-                        instrumentData: {
-                            instrumentId: page.instrumentData.instrumentId,
-                            symbol: page.instrumentData.symbol,
-                            displayName: page.instrumentData.displayName
-                        }
-                    })
-                    etoroClient.registerUserActivity()
+                    openPositionOverlay.open()
                 }
+            }
+            MenuItem {
+                text: qsTr("Add to watchlist")
+                visible: !page.openedFromWatchlist
+                enabled: !etoroClient.busy
+                onClicked: addToWatchlistOverlay.open()
+            }
+            MenuItem {
+                text: qsTr("Remove from watchlist")
+                visible: page.openedFromWatchlist
+                enabled: !etoroClient.busy
+                onClicked: removeFromWatchlistOverlay.open()
             }
         }
 
@@ -118,7 +227,9 @@ Page {
                 PageHeader {
                     id: pageHeader
                     width: parent.width
-                    title: page.instrumentData.displayName || (qsTr("Instrument ") + valueText(page.instrumentData.instrumentId))
+                    title: qsTr("%1 (%2)")
+                           .arg(page.instrumentData.displayName || (qsTr("Asset ") + valueText(page.instrumentData.instrumentId)))
+                           .arg(etoroClient.accountModeLabel)
                 }
 
                 Label {
@@ -214,7 +325,7 @@ Page {
                             Image {
                                 id: logoImage
                                 anchors.centerIn: parent
-                                source: instrumentIcon50(page.instrumentData.instrumentId)
+                                source: instrumentIcon50(page.instrumentData)
                                 width: 100
                                 height: 100
                                 fillMode: Image.PreserveAspectFit
@@ -223,32 +334,12 @@ Page {
 
                         Label {
                             id: symbolLabel
-                            width: etoroClient.tradingEnabled
-                                   ? parent.width - logoSlot.width - openPositionButton.width - Theme.paddingMedium * 2
-                                   : parent.width - logoSlot.width - Theme.paddingMedium
+                            width: parent.width - logoSlot.width - Theme.paddingMedium
                             anchors.verticalCenter: logoSlot.verticalCenter
                             text: page.instrumentData.symbol || ("#" + valueText(page.instrumentData.instrumentId))
                             color: Theme.primaryColor
                             font.pixelSize: Theme.fontSizeLarge
                             truncationMode: TruncationMode.Fade
-                        }
-
-                        Button {
-                            id: openPositionButton
-                            visible: etoroClient.tradingEnabled
-                            anchors.verticalCenter: logoSlot.verticalCenter
-                            text: qsTr("Open position")
-
-                            onClicked: {
-                                pageStack.push(Qt.resolvedUrl("OpenPositionPage.qml"), {
-                                    instrumentData: {
-                                        instrumentId: page.instrumentData.instrumentId,
-                                        symbol: page.instrumentData.symbol,
-                                        displayName: page.instrumentData.displayName
-                                    }
-                                })
-                                etoroClient.registerUserActivity()
-                            }
                         }
                     }
 
@@ -257,53 +348,43 @@ Page {
                         spacing: Theme.paddingMedium
 
                         // --- Sell ---
-                        Item {
+                        TradePriceActionRow {
                             width: parent.width
-                            height: Math.max(sellLabel.height, sellValue.implicitHeight)
-
-                            Label {
-                                id: sellLabel
-                                anchors.left: parent.left
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: qsTr("Sell:")
-                                color: Theme.primaryColor
-                                font.pixelSize: Theme.fontSizeSmall
-                            }
-
-                            PriceFlashValue {
-                                id: sellValue
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                rawValue: etoroClient.selectedInstrumentQuote.sellPrice
-                                decimals: 4
-                                textColor: Theme.primaryColor
-                                fontSize: Theme.fontSizeSmall
-                            }
+                            sideText: qsTr("Sell")
+                            rawValue: etoroClient.selectedInstrumentQuote.sellPrice
+                            decimals: 4
+                            tradingEnabled: etoroClient.tradingEnabled
+                            actionEnabled: false
+                            textColor: Theme.primaryColor
                         }
 
                         // --- Buy ---
-                        Item {
+                        TradePriceActionRow {
                             width: parent.width
-                            height: Math.max(buyLabel.height, buyValue.implicitHeight)
+                            sideText: qsTr("Buy")
+                            rawValue: etoroClient.selectedInstrumentQuote.buyPrice
+                            decimals: 4
+                            tradingEnabled: etoroClient.tradingEnabled
+                            actionEnabled: page.buyAllowed()
+                            textColor: Theme.primaryColor
+                            onClicked: {
+                                if (!page.buyAllowed()) {
+                                    etoroClient.clearLastError()
+                                    return
+                                }
 
-                            Label {
-                                id: buyLabel
-                                anchors.left: parent.left
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: qsTr("Buy:")
-                                color: Theme.primaryColor
-                                font.pixelSize: Theme.fontSizeSmall
+                                openPositionOverlay.open()
+                                etoroClient.registerUserActivity()
                             }
+                        }
 
-                            PriceFlashValue {
-                                id: buyValue
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                rawValue: etoroClient.selectedInstrumentQuote.buyPrice
-                                decimals: 4
-                                textColor: Theme.primaryColor
-                                fontSize: Theme.fontSizeSmall
-                            }
+                        Label {
+                            width: parent.width
+                            visible: page.buyRestrictedReason() !== ""
+                            text: page.buyRestrictedReason()
+                            color: Theme.errorColor
+                            font.pixelSize: Theme.fontSizeSmall
+                            wrapMode: Text.Wrap
                         }
 
                         Rectangle {
@@ -384,14 +465,18 @@ Page {
 
                     Label {
                         width: parent.width
-                        text: (page.instrumentData.displayName || qsTr("Instrument")) + qsTr(" details")
+                        text: (page.instrumentData.displayName || qsTr("Asset")) + qsTr(" details")
                         color: Theme.highlightColor
                         font.pixelSize: Theme.fontSizeSmall
                     }
 
                     Label {
                         width: parent.width
-                        text: qsTr("Price source: ") + valueText(page.instrumentData.priceSource)
+                        text: page.instrumentData.priceSource === undefined
+                              || page.instrumentData.priceSource === null
+                              || page.instrumentData.priceSource === ""
+                              ? qsTr("Price source: Not in watchlist")
+                              : qsTr("Price source: ") + valueText(page.instrumentData.priceSource)
                         color: Theme.secondaryColor
                         font.pixelSize: Theme.fontSizeSmall
                         wrapMode: Text.Wrap
@@ -399,10 +484,74 @@ Page {
 
                     Label {
                         width: parent.width
-                        text: qsTr("Watchlist item rank: ") + valueText(page.instrumentData.itemRank)
+                        text: page.instrumentData.itemRank === undefined
+                              || page.instrumentData.itemRank === null
+                              || page.instrumentData.itemRank === ""
+                              ? qsTr("Watchlist item rank: Not in watchlist")
+                              : qsTr("Watchlist item rank: ") + valueText(page.instrumentData.itemRank)
                         color: Theme.secondaryColor
                         font.pixelSize: Theme.fontSizeSmall
                         wrapMode: Text.Wrap
+                    }
+                }
+            }
+
+            Rectangle {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                visible: page.watchlistId === ""
+                         || etoroClient.instrumentWatchlistLookupActive
+                         || etoroClient.instrumentWatchlistMatches.length > 0
+                height: watchlistsCard.height + Theme.paddingMedium * 2
+                radius: Theme.paddingMedium
+                color: Theme.rgba(Theme.highlightBackgroundColor, 0.10)
+                border.width: 1
+                border.color: Theme.rgba(Theme.highlightColor, 0.18)
+
+                Column {
+                    id: watchlistsCard
+                    x: Theme.paddingMedium
+                    y: Theme.paddingMedium
+                    width: parent.width - 2 * Theme.paddingMedium
+                    spacing: Theme.paddingSmall
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Watchlists")
+                        color: Theme.highlightColor
+                        font.pixelSize: Theme.fontSizeSmall
+                    }
+
+                    Label {
+                        width: parent.width
+                        visible: etoroClient.instrumentWatchlistLookupActive
+                                 && etoroClient.instrumentWatchlistMatches.length === 0
+                        text: qsTr("Checking watchlists…")
+                        color: Theme.secondaryColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    Label {
+                        width: parent.width
+                        visible: !etoroClient.instrumentWatchlistLookupActive
+                                 && etoroClient.instrumentWatchlistMatches.length === 0
+                        text: qsTr("Not on any watchlists.")
+                        color: Theme.secondaryColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    Repeater {
+                        model: etoroClient.instrumentWatchlistMatches
+
+                        Label {
+                            width: parent.width
+                            text: modelData.watchlistName || modelData.watchlistId
+                            color: Theme.secondaryColor
+                            font.pixelSize: Theme.fontSizeSmall
+                            truncationMode: TruncationMode.Fade
+                        }
                     }
                 }
             }
@@ -414,5 +563,69 @@ Page {
         }
 
         VerticalScrollDecorator { }
+    }
+
+    //Open position overlay
+    OpenPositionOverlay {
+        id: openPositionOverlay
+
+        instrumentId: Number(page.instrumentData.instrumentId || 0)
+        symbol: page.instrumentData.symbol || ""
+        displayName: page.instrumentData.displayName || ""
+        unitPrice: etoroClient.selectedInstrumentQuote.buyPrice
+
+        onOrderSubmitted: {
+            purchaseSubmittedOverlay.open()
+        }
+    }
+
+    // Purchase submitted overlay
+    PurchaseSubmittedOverlay {
+        id: purchaseSubmittedOverlay
+    }
+
+    // Add to Watchlist overlay
+    AddToWatchlistOverlay {
+        id: addToWatchlistOverlay
+        instrumentData: page.instrumentData
+
+        onAdded: {
+            etoroClient.findWatchlistsForInstrument(page.instrumentData.instrumentId)
+        }
+    }
+
+    // Remove from watchlist overlay
+    RemoveFromWatchlistOverlay {
+        id: removeFromWatchlistOverlay
+        watchlistId: page.watchlistId
+        instrumentData: page.instrumentData
+
+        onRemoved: {
+            pageStack.pop()
+        }
+    }
+
+    Connections {
+        target: etoroClient
+
+        onCurrentWatchlistItemsChanged: {
+            if (page.watchlistId === "") {
+                page.enrichFromCurrentWatchlistIfPossible()
+                return
+            }
+
+            for (var i = 0; i < etoroClient.currentWatchlistItems.length; ++i) {
+                var item = etoroClient.currentWatchlistItems[i]
+                if (Number(item.instrumentId || item.itemId || 0) === Number(page.instrumentData.instrumentId || 0)) {
+                    page.instrumentData = page.mergeInstrumentDataPreservingRestrictions(item)
+                    page.watchlistName = etoroClient.currentWatchlistName
+                    return
+                }
+            }
+        }
+
+        onInstrumentWatchlistMatchesChanged: {
+            page.applyWatchlistMatches()
+        }
     }
 }

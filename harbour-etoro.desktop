@@ -3,8 +3,8 @@ Type=Application
 X-Sailfish-ApplicationType=Silica
 Icon=harbour-etoro
 Exec=harbour-etoro
-Name=eToro (Client)
-Comment=Sailfish Os Client for eToro trading account
+Name=eToro Client
+Comment=Sailfish OS client for eToro portfolio, watchlists and trading
 
 
 [X-Sailjail]

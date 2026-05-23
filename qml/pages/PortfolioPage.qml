@@ -344,7 +344,14 @@ Page {
 
     Connections {
         target: etoroClient
-        onOpenPositionsChanged: page.applyFilterAndSort()
+
+        onOpenPositionsChanged: {
+            page.applyFilterAndSort()
+        }
+
+        onGroupedOpenPositionsChanged: {
+            page.applyFilterAndSort()
+        }
     }
 
     Component.onCompleted: {
@@ -394,7 +401,7 @@ Page {
             spacing: Theme.paddingMedium
 
             PageHeader {
-                title: qsTr("Portfolio")
+                title: qsTr("Portfolio (%1)").arg(etoroClient.accountModeLabel)
             }
 
             Rectangle {

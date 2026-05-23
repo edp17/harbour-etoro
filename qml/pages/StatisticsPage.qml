@@ -35,6 +35,28 @@ Page {
     property string sortMode: etoroClient.statisticsSortMode
     property bool sortDescending: true
 
+    function shortIsoDate(value) {
+        if (!value)
+            return ""
+        return String(value).substring(0, 10)
+    }
+
+    function historyItemDate(item) {
+        var value = item.closeTimestamp || item.closeDateTime || item.closeDate || item.openTimestamp || item.openDateTime || ""
+        return shortIsoDate(value)
+    }
+
+    function activeRangeLabel() {
+        if (etoroClient.historyCustomRangeEnabled) {
+            if (etoroClient.historyCustomToDate && etoroClient.historyCustomToDate.length > 0)
+                return etoroClient.historyCustomFromDate + " - " + etoroClient.historyCustomToDate
+
+            return qsTr("From ") + etoroClient.historyCustomFromDate
+        }
+
+        return selectedRangeLabel
+    }
+
     function compareByAsset(a, b) {
         var an = String(a.displayName || a.symbol || "").toLowerCase()
         var bn = String(b.displayName || b.symbol || "").toLowerCase()
@@ -81,12 +103,18 @@ Page {
 
     function rebuildStats() {
         var grouped = {}
+        var toDate = etoroClient.historyCustomRangeEnabled ? String(etoroClient.historyCustomToDate || "") : ""
         var totalInvested = 0
         var totalProfit = 0
         var totalTrades = 0
 
         for (var i = 0; i < tradeHistoryData.length; ++i) {
             var item = tradeHistoryData[i]
+            if (toDate !== "") {
+                var itemDate = historyItemDate(item)
+                if (itemDate !== "" && itemDate > toDate)
+                    continue
+            }
             var instrumentId = String(item.instrumentId || "")
             var symbol = String(item.symbol || "")
             var displayName = String(item.displayName || "")
@@ -163,6 +191,12 @@ Page {
         rebuildStats()
     }
 
+    Connections {
+        target: etoroClient
+
+        onHistoryUiChanged: page.rebuildStats()
+    }
+
     SilicaFlickable {
         anchors.fill: parent
         contentHeight: contentColumn.height + Theme.paddingLarge
@@ -173,7 +207,7 @@ Page {
             spacing: Theme.paddingMedium
 
             PageHeader {
-                title: qsTr("Statistics")
+                title: qsTr("Statistics (%1)").arg(etoroClient.accountModeLabel)
             }
 
             Rectangle {
@@ -217,7 +251,7 @@ Page {
 
                     Label {
                         width: parent.width
-                        text: qsTr("Range: ") + selectedRangeLabel
+                        text: qsTr("Range: ") + page.activeRangeLabel()
                         color: Theme.secondaryColor
                         font.pixelSize: Theme.fontSizeSmall
                         wrapMode: Text.Wrap

@@ -61,7 +61,7 @@ Page {
 
             Label {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: qsTr("Version ") + (Qt.application.version ? Qt.application.version : "0.5")
+                text: qsTr("Version ") + (Qt.application.version ? Qt.application.version : "0.6")
                 font.pixelSize: Theme.fontSizeMedium
                 color: Theme.secondaryColor
             }
@@ -91,7 +91,7 @@ Page {
 
                     Label {
                         width: parent.width
-                        text: qsTr("This build provides read-only access to portfolio, grouped positions, watchlists, market quotes and trade history.")
+                        text: qsTr("This build provides portfolio, grouped positions, watchlists, Discover search, live market quotes, trade history, statistics and optional trading features.")
                         color: Theme.secondaryColor
                         font.pixelSize: Theme.fontSizeSmall
                         wrapMode: Text.Wrap
@@ -99,15 +99,7 @@ Page {
 
                     Label {
                         width: parent.width
-                        text: qsTr("This app is read-only and does not place, modify or close trades.")
-                        color: Theme.secondaryColor
-                        font.pixelSize: Theme.fontSizeSmall
-                        wrapMode: Text.Wrap
-                    }
-
-                    Label {
-                        width: parent.width
-                        text: qsTr("Trading actions are planned for a later version.")
+                        text: qsTr("Trading support is available as a beta feature. Keep trading mode disabled if you want to use the app in read-only mode.")
                         color: Theme.secondaryColor
                         font.pixelSize: Theme.fontSizeSmall
                         wrapMode: Text.Wrap

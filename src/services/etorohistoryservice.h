@@ -14,6 +14,7 @@ public:
     void fetchTradeHistory(const QString &apiKey,
                            const QString &userKey,
                            const QString &minDateIso,
+                           bool dateOnlyMinDate,
                            int page = 1,
                            int pageSize = 100);
 

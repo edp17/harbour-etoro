@@ -18,6 +18,7 @@
 */
 import QtQuick 2.0
 import Sailfish.Silica 1.0
+import "../components"
 
 Page {
     id: page
@@ -27,6 +28,9 @@ Page {
     property string filterText: etoroClient.historyFilterText
     property string selectedRangeLabel: qsTr("Last 30 days")
     property var filteredHistory: []
+    property bool historyAvailable: !etoroClient.demoMode
+    property bool customRangeVisible: false
+    property string customFromDateText: etoroClient.historyCustomFromDate
 
     function amountText(value, decimals) {
         return Number(value || 0).toLocaleString(Qt.locale(), 'f', decimals)
@@ -41,6 +45,22 @@ Page {
             return value
 
         return Qt.formatDateTime(d, "dd MMM yyyy hh:mm")
+    }
+
+    function historyItemDate(item) {
+        var value = item.closeTimestamp || item.closeDateTime || item.closeDate || item.openTimestamp || item.openDateTime || ""
+        return shortIsoDate(value)
+    }
+
+    function activeRangeLabel() {
+        if (etoroClient.historyCustomRangeEnabled) {
+            if (etoroClient.historyCustomToDate && etoroClient.historyCustomToDate.length > 0)
+                return etoroClient.historyCustomFromDate + " - " + etoroClient.historyCustomToDate
+
+            return qsTr("From ") + etoroClient.historyCustomFromDate
+        }
+
+        return selectedRangeLabel
     }
 
     function shortIsoDate(value) {
@@ -104,26 +124,33 @@ Page {
     }
 
     function applyFilterNow() {
-        var source = etoroClient.tradeHistory
+        var source = etoroClient.tradeHistory || []
         var q = filterText ? filterText.toLowerCase().trim() : ""
-
-        if (!q) {
-            filteredHistory = source.slice(0)
-            return
-        }
+        var toDate = etoroClient.historyCustomRangeEnabled ? String(etoroClient.historyCustomToDate || "") : ""
 
         var out = []
+
         for (var i = 0; i < source.length; ++i) {
             var item = source[i]
-            var name = String(item.displayName || "").toLowerCase()
-            var symbol = String(item.symbol || "").toLowerCase()
-            var instrumentId = String(item.instrumentId || "").toLowerCase()
 
-            if (name.indexOf(q) !== -1
-                    || symbol.indexOf(q) !== -1
-                    || instrumentId.indexOf(q) !== -1) {
-                out.push(item)
+            if (toDate !== "") {
+                var itemDate = historyItemDate(item)
+                if (itemDate !== "" && itemDate > toDate)
+                    continue
             }
+
+            if (q) {
+                var name = String(item.displayName || "").toLowerCase()
+                var symbol = String(item.symbol || "").toLowerCase()
+                var instrumentId = String(item.instrumentId || "").toLowerCase()
+
+                if (name.indexOf(q) === -1
+                        && symbol.indexOf(q) === -1
+                        && instrumentId.indexOf(q) === -1)
+                    continue
+            }
+
+            out.push(item)
         }
 
         filteredHistory = out
@@ -151,6 +178,8 @@ Page {
                 etoroClient.setHistoryFilterText("")
             }
         }
+
+        onHistoryUiChanged: page.applyFilterNow()
     }
 
     Component.onCompleted: {
@@ -159,7 +188,11 @@ Page {
 
         if (!initialLoadDone) {
             initialLoadDone = true
-            loadRange(isoDaysAgo(30), qsTr("Last 30 days"))
+
+            if (page.historyAvailable)
+                loadRange(isoDaysAgo(30), qsTr("Last 30 days"))
+            else
+                selectedRangeLabel = qsTr("Last 30 days")
         }
     }
 
@@ -170,7 +203,8 @@ Page {
         PullDownMenu {
             MenuItem {
                 text: qsTr("Statistics")
-                enabled: !etoroClient.historyLoading && etoroClient.tradeHistory.length > 0
+                enabled: page.historyAvailable && !etoroClient.historyLoading && etoroClient.tradeHistory.length > 0
+                visible: page.historyAvailable
                 onClicked: {
                     etoroClient.registerUserActivity()
                     pageStack.push(Qt.resolvedUrl("StatisticsPage.qml"), {
@@ -181,33 +215,59 @@ Page {
             }
             MenuItem {
                 text: qsTr("Refresh current range")
-                enabled: !etoroClient.busy && !etoroClient.locked && etoroClient.historyMinDate.length > 0
+                enabled: page.historyAvailable && !etoroClient.busy && !etoroClient.locked && etoroClient.historyMinDate.length > 0
+                visible: page.historyAvailable
                 onClicked: loadRange(etoroClient.historyMinDate, selectedRangeLabel)
             }
             MenuItem {
                 text: qsTr("Last 30 days")
-                enabled: !etoroClient.busy && !etoroClient.locked
-                onClicked: loadRange(isoDaysAgo(30), qsTr("Last 30 days"))
+                enabled: page.historyAvailable && !etoroClient.busy && !etoroClient.locked
+                visible: page.historyAvailable
+                onClicked: {
+                    etoroClient.clearHistoryCustomRange()
+                    loadRange(isoDaysAgo(30), qsTr("Last 30 days"))
+                }
             }
             MenuItem {
                 text: qsTr("Last 90 days")
-                enabled: !etoroClient.busy && !etoroClient.locked
-                onClicked: loadRange(isoDaysAgo(90), qsTr("Last 90 days"))
+                enabled: page.historyAvailable && !etoroClient.busy && !etoroClient.locked
+                visible: page.historyAvailable
+                onClicked: {
+                    etoroClient.clearHistoryCustomRange()
+                    loadRange(isoDaysAgo(90), qsTr("Last 90 days"))
+                }
             }
             MenuItem {
                 text: qsTr("Last 365 days")
-                enabled: !etoroClient.busy && !etoroClient.locked
-                onClicked: loadRange(isoDaysAgo(365), qsTr("Last 365 days"))
+                enabled: page.historyAvailable && !etoroClient.busy && !etoroClient.locked
+                visible: page.historyAvailable
+                onClicked: {
+                    etoroClient.clearHistoryCustomRange()
+                    loadRange(isoDaysAgo(365), qsTr("Last 365 days"))
+                }
             }
             MenuItem {
                 text: qsTr("Last 5 years")
-                enabled: !etoroClient.busy && !etoroClient.locked
-                onClicked: loadRange(isoYearsAgo(5), qsTr("Last 5 years"))
+                enabled: page.historyAvailable && !etoroClient.busy && !etoroClient.locked
+                visible: page.historyAvailable
+                onClicked: {
+                    etoroClient.clearHistoryCustomRange()
+                    loadRange(isoYearsAgo(5), qsTr("Last 5 years"))
+                }
             }
             MenuItem {
                 text: qsTr("Last 10 years")
-                enabled: !etoroClient.busy && !etoroClient.locked
-                onClicked: loadRange(isoYearsAgo(10), qsTr("Last 10 years"))
+                enabled: page.historyAvailable && !etoroClient.busy && !etoroClient.locked
+                visible: page.historyAvailable
+                onClicked: {
+                    etoroClient.clearHistoryCustomRange()
+                    loadRange(isoYearsAgo(10), qsTr("Last 10 years"))
+                }
+            }
+            MenuItem {
+                text: qsTr("Custom range")
+                enabled: !etoroClient.busy && !etoroClient.demoMode
+                onClicked: customRangeOverlay.open()
             }
         }
 
@@ -217,11 +277,47 @@ Page {
             spacing: Theme.paddingMedium
 
             PageHeader {
-                title: qsTr("History")
+                title: qsTr("History (%1)").arg(etoroClient.accountModeLabel)
             }
 
             Rectangle {
                 x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                visible: !page.historyAvailable
+                height: virtualHistoryColumn.height + Theme.paddingMedium * 2
+                radius: Theme.paddingMedium
+                color: Theme.rgba(Theme.highlightBackgroundColor, 0.10)
+                border.width: 1
+                border.color: Theme.rgba(Theme.highlightColor, 0.18)
+
+                Column {
+                    id: virtualHistoryColumn
+                    x: Theme.paddingMedium
+                    y: Theme.paddingMedium
+                    width: parent.width - 2 * Theme.paddingMedium
+                    spacing: Theme.paddingSmall
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Trade history is not available in Virtual mode")
+                        color: Theme.highlightColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Switch to Real account mode to view closed trades and transaction history.")
+                        color: Theme.secondaryColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+                }
+            }
+
+            Rectangle {
+                x: Theme.horizontalPageMargin
+                visible: page.historyAvailable
                 width: parent.width - 2 * x
                 height: headerCard.height + Theme.paddingMedium * 2
                 radius: Theme.paddingMedium
@@ -233,6 +329,7 @@ Page {
                     id: headerCard
                     x: Theme.paddingMedium
                     y: Theme.paddingMedium
+                    visible: page.historyAvailable
                     width: parent.width - 2 * Theme.paddingMedium
                     spacing: Theme.paddingSmall
 
@@ -309,8 +406,7 @@ Page {
 
                     Label {
                         width: parent.width
-                        text: qsTr("Range: ") + selectedRangeLabel
-                              + (etoroClient.historyMinDate.length > 0 ? " • " + shortIsoDate(etoroClient.historyMinDate) : "")
+                        text: qsTr("Range: ") + page.activeRangeLabel()
                         color: Theme.secondaryColor
                         font.pixelSize: Theme.fontSizeSmall
                         wrapMode: Text.Wrap
@@ -356,8 +452,8 @@ Page {
 
             Rectangle {
                 x: Theme.horizontalPageMargin
+                visible: page.historyAvailable && page.filteredHistory.length > 0
                 width: parent.width - 2 * x
-                visible: page.filteredHistory.length > 0
                 height: compactHeaderRow.height + Theme.paddingSmall * 2
                 radius: Theme.paddingSmall
                 color: Theme.rgba(Theme.highlightBackgroundColor, 0.06)
@@ -531,7 +627,7 @@ Page {
             Item {
                 width: parent.width
                 height: footerColumn.height
-                visible: etoroClient.historyHasMore || etoroClient.tradeHistory.length > 0
+                visible: page.historyAvailable && (etoroClient.historyHasMore || etoroClient.tradeHistory.length > 0)
 
                 Column {
                     id: footerColumn
@@ -575,5 +671,10 @@ Page {
         }
 
         VerticalScrollDecorator { }
+    }
+
+    // Custom range overlay
+    HistoryCustomRangeOverlay {
+        id: customRangeOverlay
     }
 }

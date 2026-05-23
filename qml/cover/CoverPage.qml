@@ -22,6 +22,8 @@ import Sailfish.Silica 1.0
 CoverBackground {
     id: cover
 
+    property bool readyForContent: !etoroClient.locked && etoroClient.hasCredentials
+
     function amountText(value, decimals) {
         return Number(value || 0).toLocaleString(Qt.locale(), 'f', decimals)
     }
@@ -40,7 +42,7 @@ CoverBackground {
         anchors.fill: parent
         anchors.margins: Theme.paddingMedium
         spacing: Theme.paddingSmall
-        visible: !etoroClient.locked
+        visible: cover.readyForContent
         enabled: visible
 
         Row {
@@ -213,6 +215,52 @@ CoverBackground {
                 font.pixelSize: Theme.fontSizeExtraSmall * 0.75
                 maximumLineCount: 1
                 truncationMode: TruncationMode.Fade
+            }
+        }
+    }
+
+    // No credentials
+    Item {
+        anchors.fill: parent
+        visible: !etoroClient.locked && !etoroClient.hasCredentials
+        enabled: visible
+
+        Column {
+            width: parent.width - Theme.paddingLarge * 2
+            anchors.centerIn: parent
+            spacing: Theme.paddingSmall
+
+            Image {
+                source: "file:///usr/share/icons/hicolor/172x172/apps/harbour-etoro.png"
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: Theme.iconSizeMedium
+                height: Theme.iconSizeMedium
+                fillMode: Image.PreserveAspectFit
+            }
+
+            Label {
+                width: parent.width
+                text: qsTr("eToro")
+                color: Theme.highlightColor
+                font.pixelSize: Theme.fontSizeSmall
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            Label {
+                width: parent.width
+                text: etoroClient.demoMode ? qsTr("Virtual mode") : qsTr("Real mode")
+                color: Theme.secondaryColor
+                font.pixelSize: Theme.fontSizeExtraSmall
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            Label {
+                width: parent.width
+                wrapMode: Text.Wrap
+                text: qsTr("No API credentials")
+                color: Theme.primaryColor
+                font.pixelSize: Theme.fontSizeExtraSmall
+                horizontalAlignment: Text.AlignHCenter
             }
         }
     }

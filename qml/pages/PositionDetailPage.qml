@@ -26,6 +26,103 @@ Page {
     property var positionData: ({ })
     property bool readOnlyMode: !etoroClient.tradingEnabled
 
+    property bool closeSuccessVisible: false
+
+    property string closeSuccessText: ""
+
+    function restrictionValue(key) {
+        if (page.positionData && page.positionData[key] !== undefined)
+            return page.positionData[key]
+
+        if (page.positionData.positions && page.positionData.positions.length > 0) {
+            for (var i = 0; i < page.positionData.positions.length; ++i) {
+                if (page.positionData.positions[i][key] !== undefined)
+                    return page.positionData.positions[i][key]
+            }
+        }
+
+        var cached = etoroClient.restrictionsForInstrument(page.positionData.instrumentId)
+        if (cached && cached[key] !== undefined)
+            return cached[key]
+
+        return undefined
+    }
+
+    function buyRestrictedReason() {
+        if (page.restrictionValue("tradingDisabled") === true)
+            return qsTr("Trading is disabled for this market.")
+
+        if (page.restrictionValue("isBuyEnabled") === false)
+            return qsTr("Buying is not available for this market.")
+
+        if (page.restrictionValue("isCurrentlyTradable") === false)
+            return qsTr("This market is not currently tradable.")
+
+        return ""
+    }
+
+    function buyAllowed() {
+        return page.buyRestrictedReason() === ""
+    }
+
+    function instrumentTypeName(typeId) {
+        typeId = Number(typeId || 0)
+
+        switch (typeId) {
+        case 1: return qsTr("Currencies")
+        case 2: return qsTr("Commodities")
+        case 4: return qsTr("Indices")
+        case 5: return qsTr("Stocks")
+        case 6: return qsTr("ETFs")
+        case 10: return qsTr("Crypto")
+        default: return qsTr("Other")
+        }
+    }
+
+    function effectiveInstrumentTypeId() {
+        if (page.positionData.instrumentTypeId !== undefined
+                && page.positionData.instrumentTypeId !== null
+                && String(page.positionData.instrumentTypeId) !== "")
+            return page.positionData.instrumentTypeId
+
+        if (page.positionData.positions
+                && page.positionData.positions.length > 0
+                && page.positionData.positions[0].instrumentTypeId !== undefined)
+            return page.positionData.positions[0].instrumentTypeId
+
+        return 0
+    }
+
+    function showCloseSuccess(partial) {
+        closeSuccessText = partial
+                ? qsTr("Partial close submitted successfully.")
+                : qsTr("Position close submitted successfully.")
+        closeSuccessVisible = true
+        closeSuccessTimer.restart()
+    }
+
+    function investedAmount(item) {
+        if (!item)
+            return 0
+
+        if (item.positionCount !== undefined
+                && Number(item.positionCount) > 1
+                && item.invested !== undefined) {
+            return Number(item.invested || 0)
+        }
+
+        if (item.positions && item.positions.length > 0) {
+            var total = 0
+
+            for (var i = 0; i < item.positions.length; ++i)
+                total += Number(item.positions[i].invested || 0)
+
+            return total
+        }
+
+        return Number(item.invested || 0)
+    }
+
     function amountText(value, decimals) {
         return Number(value || 0).toLocaleString(Qt.locale(), 'f', decimals)
     }
@@ -50,7 +147,7 @@ Page {
     }
 
     function netValue(item) {
-        return Number(item.invested || 0) + Number(item.netProfit || 0)
+        return investedAmount(item) + Number(item.netProfit || 0)
     }
 
     function openPositionsModel() {
@@ -79,6 +176,29 @@ Page {
                 + "/50x50.png"
     }
 
+    function refreshPositionDataFromGroupedModel() {
+        var currentInstrumentId = String(page.positionData.instrumentId || "")
+        if (currentInstrumentId === "")
+            return
+
+        var grouped = etoroClient.groupedOpenPositions || []
+
+        for (var i = 0; i < grouped.length; i++) {
+            var item = grouped[i]
+            if (String(item.instrumentId || "") === currentInstrumentId) {
+                page.positionData = item
+                return
+            }
+        }
+    }
+
+    Timer {
+        id: closeSuccessTimer
+        interval: 3500
+        repeat: false
+        onTriggered: page.closeSuccessVisible = false
+    }
+
     Timer {
         id: positionQuoteRefreshTimer
         repeat: true
@@ -94,6 +214,14 @@ Page {
         }
     }
 
+    Connections {
+        target: etoroClient
+
+        onGroupedOpenPositionsChanged: {
+            page.refreshPositionDataFromGroupedModel()
+        }
+    }
+
     SilicaFlickable {
         anchors.fill: parent
         contentHeight: contentColumn.height + Theme.paddingLarge
@@ -104,7 +232,7 @@ Page {
             spacing: Theme.paddingLarge
 
             PageHeader {
-                title: qsTr("Position")
+                title: qsTr("Position (%1)").arg(etoroClient.accountModeLabel)
             }
 
             Rectangle {
@@ -139,6 +267,27 @@ Page {
                         font.pixelSize: Theme.fontSizeSmall
                         wrapMode: Text.Wrap
                     }
+                }
+            }
+
+            Rectangle {
+                width: parent.width
+                visible: page.closeSuccessVisible
+                height: closeSuccessLabel.height + Theme.paddingMedium * 2
+                radius: Theme.paddingSmall
+                color: Theme.rgba(Theme.highlightColor, 0.18)
+                border.width: 1
+                border.color: Theme.rgba(Theme.highlightColor, 0.45)
+
+                Label {
+                    id: closeSuccessLabel
+                    x: Theme.paddingMedium
+                    y: Theme.paddingMedium
+                    width: parent.width - 2 * Theme.paddingMedium
+                    text: page.closeSuccessText
+                    color: Theme.highlightColor
+                    font.pixelSize: Theme.fontSizeSmall
+                    wrapMode: Text.Wrap
                 }
             }
 
@@ -185,7 +334,7 @@ Page {
                         }
 
                         Column {
-                            width: parent.width * 0.34
+                            width: parent.width - logoSlot.width - rightSummaryColumn.width - Theme.paddingMedium * 2
                             anchors.verticalCenter: logoSlot.verticalCenter
                             spacing: 2
 
@@ -199,22 +348,36 @@ Page {
 
                             Label {
                                 width: parent.width
-                                text: page.positionData.displayName || (qsTr("Instrument ") + page.positionData.instrumentId)
+                                text: page.positionData.displayName || (qsTr("Asset ") + page.positionData.instrumentId)
                                 color: Theme.secondaryColor
                                 font.pixelSize: Theme.fontSizeSmall
                                 truncationMode: TruncationMode.Fade
                             }
                         }
 
-                        Label {
-                            id: totalValueLabel
+                        Column {
+                            id: rightSummaryColumn
+                            width: parent.width * 0.34
                             anchors.verticalCenter: logoSlot.verticalCenter
-                            width: parent.width * 0.40
-                            text: amountText(netValue(page.positionData), 2)
-                            color: Number(page.positionData.netProfit || 0) >= 0 ? Theme.highlightColor : Theme.errorColor
-                            font.pixelSize: Theme.fontSizeMedium
-                            horizontalAlignment: Text.AlignRight
-                            truncationMode: TruncationMode.Fade
+                            spacing: 2
+
+                            Label {
+                                width: parent.width
+                                text: page.instrumentTypeName(page.effectiveInstrumentTypeId())
+                                color: Theme.secondaryColor
+                                font.pixelSize: Theme.fontSizeSmall
+                                horizontalAlignment: Text.AlignRight
+                                truncationMode: TruncationMode.Fade
+                            }
+
+                            Label {
+                                width: parent.width
+                                text: amountText(netValue(page.positionData), 2)
+                                color: Number(page.positionData.netProfit || 0) >= 0 ? Theme.highlightColor : Theme.errorColor
+                                font.pixelSize: Theme.fontSizeMedium
+                                horizontalAlignment: Text.AlignRight
+                                truncationMode: TruncationMode.Fade
+                            }
                         }
                     }
 
@@ -232,7 +395,7 @@ Page {
 
                         Label {
                             width: parent.width * 0.60 - Theme.paddingMedium
-                            text: amountText(profitPercent(page.positionData), 1) + "%"
+                            text: amountText(investedAmount(page.positionData), 2)
                             color: Number(page.positionData.netProfit || 0) >= 0 ? Theme.highlightColor : Theme.errorColor
                             font.pixelSize: Theme.fontSizeSmall
                             horizontalAlignment: Text.AlignRight
@@ -246,60 +409,45 @@ Page {
                         color: Theme.rgba(Theme.primaryColor, 0.5)
                     }
 
-                    Row {
+                    // Sell -----
+                    TradePriceActionRow {
                         width: parent.width
-                        spacing: Theme.paddingMedium
-
-                        Label {
-                            width: parent.width * 0.34
-                            text: qsTr("Sell:")
-                            color: Theme.primaryColor
-                            font.pixelSize: Theme.fontSizeSmall
-                            truncationMode: TruncationMode.Fade
-                        }
-
-                        Item {
-                            width: parent.width * 0.66 - Theme.paddingMedium
-                            height: positionSellValue.implicitHeight
-
-                            PriceFlashValue {
-                                id: positionSellValue
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                rawValue: (etoroClient.quoteForPositionInstrument(page.positionData.instrumentId) || {}).ask
-                                decimals: 4
-                                textColor: Theme.secondaryColor
-                                fontSize: Theme.fontSizeSmall
-                            }
-                        }
+                        sideText: qsTr("Sell")
+                        rawValue: (etoroClient.quoteForPositionInstrument(page.positionData.instrumentId) || {}).ask
+                        decimals: 4
+                        tradingEnabled: etoroClient.tradingEnabled
+                        actionEnabled: false
+                        textColor: Theme.secondaryColor
+                        labelWidth: parent.width * 0.34
                     }
 
-                    Row {
+                    // Buy -----
+                    TradePriceActionRow {
                         width: parent.width
-                        spacing: Theme.paddingMedium
-
-                        Label {
-                            width: parent.width * 0.34
-                            text: qsTr("Buy:")
-                            color: Theme.primaryColor
-                            font.pixelSize: Theme.fontSizeSmall
-                            truncationMode: TruncationMode.Fade
-                        }
-
-                        Item {
-                            width: parent.width * 0.66 - Theme.paddingMedium
-                            height: positionBuyValue.implicitHeight
-
-                            PriceFlashValue {
-                                id: positionBuyValue
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                rawValue: (etoroClient.quoteForPositionInstrument(page.positionData.instrumentId) || {}).bid
-                                decimals: 4
-                                textColor: Theme.secondaryColor
-                                fontSize: Theme.fontSizeSmall
+                        sideText: qsTr("Buy")
+                        rawValue: (etoroClient.quoteForPositionInstrument(page.positionData.instrumentId) || {}).bid
+                        decimals: 4
+                        tradingEnabled: etoroClient.tradingEnabled
+                        actionEnabled: page.buyAllowed()
+                        textColor: Theme.secondaryColor
+                        labelWidth: parent.width * 0.34
+                        onClicked: {
+                            if (!page.buyAllowed()) {
+                                etoroClient.clearLastError()
+                                return
                             }
+
+                            openPositionOverlay.open()
+                            etoroClient.registerUserActivity()
                         }
+                    }
+                    Label {
+                        width: parent.width
+                        visible: page.buyRestrictedReason() !== ""
+                        text: page.buyRestrictedReason()
+                        color: Theme.errorColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
                     }
                 }
             }
@@ -389,7 +537,7 @@ Page {
                             onClicked: {
                                 pageStack.push(Qt.resolvedUrl("OpenPositionPage.qml"), {
                                     positionData: modelData,
-                                    pageTitle: page.detailPageTitle(modelData)
+                                    instrumentData: page.positionData
                                 })
                             }
 
@@ -471,5 +619,24 @@ Page {
         }
 
         VerticalScrollDecorator { }
+    }
+
+    //Open position overlay
+    OpenPositionOverlay {
+        id: openPositionOverlay
+
+        instrumentId: Number(page.positionData.instrumentId || 0)
+        symbol: page.positionData.symbol || ""
+        displayName: page.positionData.displayName || ""
+        unitPrice: (etoroClient.quoteForPositionInstrument(page.positionData.instrumentId) || {}).bid
+
+        onOrderSubmitted: {
+            purchaseSubmittedOverlay.open()
+        }
+    }
+
+    // Purchase submitted overlay
+    PurchaseSubmittedOverlay {
+        id: purchaseSubmittedOverlay
     }
 }

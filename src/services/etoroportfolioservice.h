@@ -12,7 +12,9 @@ class EtoroPortfolioService : public QObject
 public:
     explicit EtoroPortfolioService(QNetworkAccessManager *nam, QObject *parent = nullptr);
 
-    void fetchPortfolioSummary(const QString &apiKey, const QString &userKey);
+    void fetchPortfolioSummary(const QString &apiKey,
+                               const QString &userKey,
+                               const QString &accountMode);
 
 signals:
     void portfolioReady(const QVariantMap &summary, const QVariantList &positions);

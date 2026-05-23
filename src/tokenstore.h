@@ -26,6 +26,21 @@ public:
 
     QString lastError() const;
 
+    bool saveRealUserKey(const QString &value);
+    bool saveDemoUserKey(const QString &value);
+
+    QString realUserKey() const;
+    QString demoUserKey() const;
+
+    bool clearRealUserKey();
+    bool clearDemoUserKey();
+
+    bool hasApiKey() const;
+    bool hasRealUserKey() const;
+    bool hasDemoUserKey() const;
+    bool hasCredentialsForMode(bool demo) const;
+    QString userKeyForMode(bool demo) const;
+
 private:
     QString loadSecret(const QString &secretName) const;
     bool saveSecret(const QString &secretName, const QString &value);

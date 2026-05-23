@@ -27,7 +27,8 @@ Page {
 
     function syncCredentialFields() {
         apiKeyField.text = settingsUnlocked ? etoroClient.apiKey : ""
-        userKeyField.text = settingsUnlocked ? etoroClient.userKey : ""
+        realUserKeyField.text = settingsUnlocked ? etoroClient.realUserKey : ""
+        demoUserKeyField.text = settingsUnlocked ? etoroClient.demoUserKey : ""
     }
 
     onSettingsUnlockedChanged: {
@@ -35,7 +36,8 @@ Page {
             syncCredentialFields()
         else {
             apiKeyField.text = ""
-            userKeyField.text = ""
+            realUserKeyField.text = ""
+            demoUserKeyField.text = ""
         }
     }
 
@@ -99,7 +101,8 @@ Page {
                     etoroClient.registerUserActivity()
                     etoroClient.clearCredentials()
                     apiKeyField.text = ""
-                    userKeyField.text = ""
+                    realUserKeyField.text = ""
+                    demoUserKeyField.text = ""
                     newPinField.text = ""
                     confirmPinField.text = ""
                     localPinError = ""
@@ -110,27 +113,27 @@ Page {
         Column {
             id: contentColumn
             width: parent.width
-            spacing: Theme.paddingSmall
+            spacing: Theme.paddingLarge
 
             PageHeader {
-                title: "Settings"
+                title: qsTr("Settings (%1)").arg(etoroClient.accountModeLabel)
             }
 
             SectionHeader {
-                text: "API Access"
+                text: qsTr("API Access")
             }
 
             Rectangle {
                 x: Theme.horizontalPageMargin
                 width: parent.width - 2 * x
-                height: apiAccessColumn.height + Theme.paddingMedium * 2
+                height: publicApiColumn.height + Theme.paddingMedium * 2
                 radius: Theme.paddingMedium
                 color: Theme.rgba(Theme.highlightBackgroundColor, 0.10)
                 border.width: 1
                 border.color: Theme.rgba(Theme.highlightColor, 0.18)
 
                 Column {
-                    id: apiAccessColumn
+                    id: publicApiColumn
                     x: Theme.paddingMedium
                     y: Theme.paddingMedium
                     width: parent.width - 2 * Theme.paddingMedium
@@ -138,7 +141,7 @@ Page {
 
                     Label {
                         width: parent.width
-                        text: qsTr("eToro API credentials")
+                        text: qsTr("Public API key")
                         color: Theme.highlightColor
                         font.pixelSize: Theme.fontSizeSmall
                         wrapMode: Text.Wrap
@@ -146,46 +149,231 @@ Page {
 
                     Label {
                         width: parent.width
-                        text: qsTr("Store your public API key and user key securely on this device. These are required to load your portfolio.")
-                        wrapMode: Text.Wrap
+                        text: qsTr("This key is shared by Real and Virtual account access.")
                         color: Theme.secondaryHighlightColor
                         font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
                     }
 
-                    TextField {
+                    PasswordField {
                         id: apiKeyField
                         width: parent.width
                         label: qsTr("API key")
                         placeholderText: qsTr("Paste eToro API key")
                         text: ""
-                        echoMode: TextInput.Password
-                        onTextChanged: etoroClient.registerUserActivity()
-                    }
-
-                    TextField {
-                        id: userKeyField
-                        width: parent.width
-                        label: qsTr("User key")
-                        placeholderText: qsTr("Paste eToro user key")
-                        text: ""
-                        echoMode: TextInput.Password
+                        inputMethodHints: Qt.ImhNoPredictiveText
                         onTextChanged: etoroClient.registerUserActivity()
                     }
 
                     Button {
                         width: parent.width
-                        text: qsTr("Save credentials")
+                        text: qsTr("Save API key")
                         onClicked: {
-                            etoroClient.registerUserActivity()
-                            etoroClient.saveCredentials(apiKeyField.text, userKeyField.text)
+                            etoroClient.saveApiKey(apiKeyField.text)
                             syncCredentialFields()
                         }
                     }
                 }
             }
 
+            Rectangle {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                height: realUserColumn.height + Theme.paddingMedium * 2
+                radius: Theme.paddingMedium
+                color: Theme.rgba(Theme.highlightBackgroundColor, 0.10)
+                border.width: 1
+                border.color: Theme.rgba(Theme.highlightColor, 0.18)
+
+                Column {
+                    id: realUserColumn
+                    x: Theme.paddingMedium
+                    y: Theme.paddingMedium
+                    width: parent.width - 2 * Theme.paddingMedium
+                    spacing: Theme.paddingSmall
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Real account user key")
+                        color: Theme.highlightColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    PasswordField {
+                        id: realUserKeyField
+                        width: parent.width
+                        label: qsTr("Real user key")
+                        placeholderText: qsTr("Paste real account user key")
+                        text: ""
+                        inputMethodHints: Qt.ImhNoPredictiveText
+                        onTextChanged: etoroClient.registerUserActivity()
+                    }
+
+                    Label {
+                        width: parent.width
+                        text: etoroClient.hasRealCredentials ? qsTr("Real credentials configured.") : qsTr("Real credentials not configured.")
+                        color: etoroClient.hasRealCredentials ? Theme.highlightColor : Theme.secondaryColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    Row {
+                        width: parent.width
+                        spacing: Theme.paddingMedium
+
+                        Button {
+                            width: (parent.width - Theme.paddingMedium) / 2
+                            text: qsTr("Save")
+                            onClicked: {
+                                etoroClient.saveUserKeyForMode(false, realUserKeyField.text)
+                                syncCredentialFields()
+                            }
+                        }
+
+                        Button {
+                            width: (parent.width - Theme.paddingMedium) / 2
+                            text: qsTr("Clear")
+                            enabled: etoroClient.hasRealCredentials
+                            onClicked: {
+                                realUserKeyField.text = ""
+                                etoroClient.clearUserKeyForMode(false)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                height: demoUserColumn.height + Theme.paddingMedium * 2
+                radius: Theme.paddingMedium
+                color: Theme.rgba(Theme.highlightBackgroundColor, 0.10)
+                border.width: 1
+                border.color: Theme.rgba(Theme.highlightColor, 0.18)
+
+                Column {
+                    id: demoUserColumn
+                    x: Theme.paddingMedium
+                    y: Theme.paddingMedium
+                    width: parent.width - 2 * Theme.paddingMedium
+                    spacing: Theme.paddingSmall
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Virtual account user key")
+                        color: Theme.highlightColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    PasswordField {
+                        id: demoUserKeyField
+                        width: parent.width
+                        label: qsTr("Virtual user key")
+                        placeholderText: qsTr("Paste virtual account user key")
+                        text: ""
+                        inputMethodHints: Qt.ImhNoPredictiveText
+                        onTextChanged: etoroClient.registerUserActivity()
+                    }
+
+                    Label {
+                        width: parent.width
+                        text: etoroClient.hasDemoCredentials ? qsTr("Virtual credentials configured.") : qsTr("Virtual credentials not configured.")
+                        color: etoroClient.hasDemoCredentials ? Theme.highlightColor : Theme.secondaryColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    Row {
+                        width: parent.width
+                        spacing: Theme.paddingMedium
+
+                        Button {
+                            width: (parent.width - Theme.paddingMedium) / 2
+                            text: qsTr("Save")
+                            onClicked: {
+                                etoroClient.saveUserKeyForMode(true, demoUserKeyField.text)
+                                syncCredentialFields()
+                            }
+                        }
+
+                        Button {
+                            width: (parent.width - Theme.paddingMedium) / 2
+                            text: qsTr("Clear")
+                            enabled: etoroClient.hasDemoCredentials
+                            onClicked: {
+                                demoUserKeyField.text = ""
+                                etoroClient.clearUserKeyForMode(true)
+                            }
+                        }
+                    }
+                }
+            }
+
             SectionHeader {
-                text: "Security"
+                text: qsTr("Account")
+            }
+
+            Rectangle {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                height: accountModeColumn.height + Theme.paddingMedium * 2
+                radius: Theme.paddingMedium
+                color: Theme.rgba(Theme.highlightBackgroundColor, 0.10)
+                border.width: 1
+                border.color: Theme.rgba(Theme.highlightColor, 0.18)
+
+                Column {
+                    id: accountModeColumn
+                    x: Theme.paddingMedium
+                    y: Theme.paddingMedium
+                    width: parent.width - 2 * Theme.paddingMedium
+                    spacing: Theme.paddingSmall
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Account mode")
+                        color: Theme.highlightColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    Label {
+                        width: parent.width
+                        text: etoroClient.demoMode
+                              ? qsTr("Virtual account mode is active. The app uses demo/virtual account endpoints.")
+                              : qsTr("Real account mode is active. The app uses real account endpoints.")
+                        color: etoroClient.demoMode ? Theme.highlightColor : Theme.secondaryHighlightColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    TextSwitch {
+                        width: parent.width
+                        text: qsTr("Use virtual account")
+                        description: qsTr("Enable this when using API credentials for the eToro virtual portfolio.")
+                        checked: etoroClient.demoMode
+
+                        onCheckedChanged: {
+                            etoroClient.setDemoMode(checked)
+                            etoroClient.registerUserActivity()
+                        }
+                    }
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Real and virtual API credentials may have different permissions. Use credentials that match the selected account mode.")
+                        color: Theme.secondaryColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+                }
+            }
+
+            SectionHeader {
+                text: qsTr("Security")
             }
 
             Rectangle {
@@ -229,14 +417,6 @@ Page {
                               + (etoroClient.autoLockMinutes > 0
                                  ? etoroClient.autoLockMinutes + qsTr(" min")
                                  : qsTr("Off"))
-                        color: Theme.secondaryColor
-                        wrapMode: Text.Wrap
-                        font.pixelSize: Theme.fontSizeSmall
-                    }
-
-                    Label {
-                        width: parent.width
-                        text: qsTr("Version 0.5 is read-only. It can display account and market information, but it cannot place, modify or close trades. Trading actions are planned for a later version.")
                         color: Theme.secondaryColor
                         wrapMode: Text.Wrap
                         font.pixelSize: Theme.fontSizeSmall
@@ -466,6 +646,87 @@ Page {
             }
 
             SectionHeader {
+                text: qsTr("Trading")
+            }
+
+            Rectangle {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                height: tradingColumn.height + Theme.paddingMedium * 2
+                radius: Theme.paddingMedium
+                color: Theme.rgba(Theme.highlightBackgroundColor, 0.10)
+                border.width: 1
+                border.color: Theme.rgba(Theme.highlightColor, 0.18)
+
+                Column {
+                    id: tradingColumn
+                    x: Theme.paddingMedium
+                    y: Theme.paddingMedium
+                    width: parent.width - 2 * Theme.paddingMedium
+                    spacing: Theme.paddingSmall
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Trading mode")
+                        color: Theme.highlightColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    Label {
+                        width: parent.width
+                        text: etoroClient.tradingEnabled
+                              ? qsTr("Trading features are enabled. Order entry and related actions may be shown in the app.")
+                              : qsTr("Read-only mode is active. Trading actions are hidden or disabled.")
+                        color: Theme.secondaryHighlightColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    TextSwitch {
+                        text: qsTr("Enable trading mode")
+                        description: qsTr("Turn off to keep the app in read-only mode.")
+                        checked: etoroClient.tradingEnabled
+
+                        onCheckedChanged: {
+                            etoroClient.setTradingEnabled(checked)
+                            etoroClient.registerUserActivity()
+                        }
+                    }
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("For safety, trading mode is off by default.")
+                        color: Theme.secondaryColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    TextSwitch {
+                        text: qsTr("Allow live order submission")
+                        description: qsTr("Keep this off for dry-run testing. When off, orders are validated locally but not sent to eToro.")
+                        checked: etoroClient.liveOrderSubmissionEnabled
+                        enabled: etoroClient.tradingEnabled
+
+                        onCheckedChanged: {
+                            etoroClient.setLiveOrderSubmissionEnabled(checked)
+                            etoroClient.registerUserActivity()
+                        }
+                    }
+
+                    Label {
+                        width: parent.width
+                        visible: etoroClient.liveOrderSubmissionEnabled
+                        text: qsTr("Warning: live order submission can place real market orders when Real account mode is active.")
+                        color: Theme.errorColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                }
+            }
+
+            SectionHeader {
                 text: qsTr("Live quotes")
             }
 
@@ -576,6 +837,47 @@ Page {
                 }
             }
 
+            SectionHeader {
+                text: qsTr("Debug")
+            }
+
+            Rectangle {
+                x: Theme.horizontalPageMargin
+                width: parent.width - 2 * x
+                height: debugColumn.height + Theme.paddingMedium * 2
+                radius: Theme.paddingMedium
+                color: Theme.rgba(Theme.highlightBackgroundColor, 0.10)
+                border.width: 1
+                border.color: Theme.rgba(Theme.highlightColor, 0.18)
+
+                Column {
+                    id: debugColumn
+                    x: Theme.paddingMedium
+                    y: Theme.paddingMedium
+                    width: parent.width - 2 * Theme.paddingMedium
+                    spacing: Theme.paddingSmall
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Debug logging")
+                        color: Theme.highlightColor
+                        font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.Wrap
+                    }
+
+                    TextSwitch {
+                        width: parent.width
+                        text: qsTr("Enable debug logging")
+                        description: qsTr("Print detailed API payloads and responses to the console.")
+                        checked: etoroClient.debugLoggingEnabled
+                        onCheckedChanged: {
+                            etoroClient.setDebugLoggingEnabled(checked)
+                            etoroClient.registerUserActivity()
+                        }
+                    }
+                }
+            }
+
             Item {
                 width: parent.width
                 height: Theme.paddingLarge
@@ -583,6 +885,7 @@ Page {
         }
     }
 
+    // Pin Confirm overlay
     Item {
         anchors.fill: parent
         visible: pinConfirmOverlayVisible

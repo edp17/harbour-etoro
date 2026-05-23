@@ -81,7 +81,7 @@ Page {
 
                 PageHeader {
                     id: pageHeader
-                    title: qsTr("Trade")
+                    title: qsTr("Trade (%1)").arg(etoroClient.accountModeLabel)
                     width: parent.width
                 }
 

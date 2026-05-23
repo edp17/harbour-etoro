@@ -1,9 +1,9 @@
 Name:       harbour-etoro
-Summary:    eToro client for Sailfish OS
-Version:    0.5.0
+Summary:    eToro trading client for Sailfish OS
+Version:    0.6.0
 Release:    1
 Group:      Applications/Finance
-License:    MIT
+License:    GPL-3.0-or-later
 URL:        https://github.com/edp17/harbour-etoro
 Source0:    %{name}-%{version}.tar.bz2
 BuildRequires:  cmake
@@ -16,7 +16,7 @@ BuildRequires:  pkgconfig(sailfishsecrets)
 Requires:       sailfishsilica-qt5
 
 %description
-A read-only Sailfish OS client for viewing eToro portfolio, positions, watchlists, live quotes and trade history.
+A Sailfish OS client for viewing eToro portfolios, positions, watchlists, live quotes and trade history, with optional trading support.
 
 %prep
 %autosetup
@@ -38,4 +38,4 @@ A read-only Sailfish OS client for viewing eToro portfolio, positions, watchlist
 /usr/share/harbour-etoro
 
 %changelog
-- Initial build (View only mode)
+- Trading-enabled beta

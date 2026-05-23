@@ -1,5 +1,6 @@
 #include "etoroportfolioservice.h"
 #include "../networkutils.h"
+#include "../applog.h"
 
 #include <QNetworkReply>
 #include <QJsonDocument>
@@ -13,10 +14,12 @@ EtoroPortfolioService::EtoroPortfolioService(QNetworkAccessManager *nam, QObject
 {
 }
 
-void EtoroPortfolioService::fetchPortfolioSummary(const QString &apiKey, const QString &userKey)
+void EtoroPortfolioService::fetchPortfolioSummary(const QString &apiKey,
+                                                  const QString &userKey,
+                                                  const QString &accountMode)
 {
     QNetworkRequest req = NetworkUtils::buildAuthenticatedRequest(
-                QStringLiteral("/trading/info/real/pnl"),
+                QStringLiteral("/trading/info/%1/pnl").arg(accountMode),
                 apiKey,
                 userKey);
 
@@ -27,9 +30,11 @@ void EtoroPortfolioService::fetchPortfolioSummary(const QString &apiKey, const Q
         const QByteArray body = reply->readAll();
         const QNetworkReply::NetworkError netError = reply->error();
         reply->deleteLater();
-
-        qWarning() << "ETORO HTTP STATUS:" << httpStatus;
-        qWarning() << "ETORO RAW BODY:" << body;
+        if (AppLog::debugEnabled())
+        {
+            qWarning() << "ETORO HTTP STATUS:" << httpStatus;
+            qWarning() << "ETORO RAW BODY:" << body;
+        }
 
         if (netError != QNetworkReply::NoError) {
             emit requestFailed(reply->errorString(), httpStatus, body);
@@ -44,13 +49,16 @@ void EtoroPortfolioService::fetchPortfolioSummary(const QString &apiKey, const Q
         }
 
         const QVariantMap root = doc.object().toVariantMap();
-        qWarning() << "ETORO ROOT KEYS:" << root.keys();
+        if (AppLog::debugEnabled())
+            qWarning() << "ETORO ROOT KEYS:" << root.keys();
 
         const QVariantMap summary = parseSummary(root);
         const QVariantList positions = parsePositions(root);
-
-        qWarning() << "ETORO PARSED SUMMARY:" << summary;
-        qWarning() << "ETORO PARSED POSITIONS COUNT:" << positions.count();
+        if (AppLog::debugEnabled())
+        {
+            qWarning() << "ETORO PARSED SUMMARY:" << summary;
+            qWarning() << "ETORO PARSED POSITIONS COUNT:" << positions.count();
+        }
 
         emit portfolioReady(summary, positions);
     });
@@ -127,6 +135,14 @@ QVariantList EtoroPortfolioService::parsePositions(const QVariantMap &root) cons
         p.insert("stopLossRate", toDouble(in.value("stopLossRate")));
         p.insert("isNoTakeProfit", in.value("isNoTakeProfit").toBool());
         p.insert("isNoStopLoss", in.value("isNoStopLoss").toBool());
+
+if (AppLog::debugEnabled())
+    qWarning() << "PARSED POSITION DEBUG"
+               << "positionId=" << p.value("positionId")
+               << "instrumentId=" << p.value("instrumentId")
+               << "invested=" << p.value("invested")
+               << "units=" << p.value("units")
+               << "openDateTime=" << p.value("openDateTime");
 
         out.append(p);
     }

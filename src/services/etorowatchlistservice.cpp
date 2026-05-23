@@ -1,9 +1,14 @@
 #include "etorowatchlistservice.h"
 #include "../networkutils.h"
+#include "../applog.h"
 
 #include <QNetworkReply>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QDateTime>
+#include <QUrlQuery>
+#include <QBuffer>
+#include <QIODevice>
 #include <QDebug>
 
 EtoroWatchlistService::EtoroWatchlistService(QNetworkAccessManager *nam, QObject *parent)
@@ -26,9 +31,11 @@ void EtoroWatchlistService::fetchWatchlists(const QString &apiKey, const QString
         const QByteArray body = reply->readAll();
         const QNetworkReply::NetworkError netError = reply->error();
         reply->deleteLater();
-
-        qWarning() << "ETORO WATCHLISTS STATUS:" << httpStatus;
-        qWarning() << "ETORO WATCHLISTS BODY:" << body;
+        if (AppLog::debugEnabled())
+        {
+            qWarning() << "ETORO WATCHLISTS STATUS:" << httpStatus;
+            qWarning() << "ETORO WATCHLISTS BODY:" << body;
+        }
 
         if (netError != QNetworkReply::NoError) {
             emit requestFailed(reply->errorString(), httpStatus, body);
@@ -63,9 +70,11 @@ void EtoroWatchlistService::fetchWatchlist(const QString &watchlistId,
         const QByteArray body = reply->readAll();
         const QNetworkReply::NetworkError netError = reply->error();
         reply->deleteLater();
-
-        qWarning() << "ETORO WATCHLIST STATUS:" << httpStatus;
-        qWarning() << "ETORO WATCHLIST BODY:" << body;
+        if (AppLog::debugEnabled())
+        {
+            qWarning() << "ETORO WATCHLIST STATUS:" << httpStatus;
+            qWarning() << "ETORO WATCHLIST BODY:" << body;
+        }
 
         if (netError != QNetworkReply::NoError) {
             emit requestFailed(reply->errorString(), httpStatus, body);
@@ -124,6 +133,254 @@ void EtoroWatchlistService::fetchWatchlist(const QString &watchlistId,
         }
 
         emit watchlistItemsReady(watchlistId, watchlistName, normalized);
+    });
+}
+
+void EtoroWatchlistService::addInstrumentToWatchlist(const QString &watchlistId,
+                                                     const QVariantMap &instrument,
+                                                     const QString &apiKey,
+                                                     const QString &userKey)
+{
+    QNetworkRequest req = NetworkUtils::buildAuthenticatedRequest(
+                QStringLiteral("/watchlists/%1/items").arg(watchlistId),
+                apiKey,
+                userKey);
+    req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+
+    QVariantMap item;
+    item.insert(QStringLiteral("itemId"), instrument.value(QStringLiteral("instrumentId")).toInt());
+    item.insert(QStringLiteral("itemType"), QStringLiteral("Instrument"));
+    item.insert(QStringLiteral("itemRank"), 0);
+    item.insert(QStringLiteral("itemAddedReason"), QStringLiteral("Manual"));
+    item.insert(QStringLiteral("itemAddedDate"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+
+    QVariantMap market;
+    market.insert(QStringLiteral("id"), instrument.value(QStringLiteral("instrumentId")));
+    market.insert(QStringLiteral("symbolName"), instrument.value(QStringLiteral("symbol")));
+    market.insert(QStringLiteral("displayName"), instrument.value(QStringLiteral("displayName")));
+    market.insert(QStringLiteral("assetTypeId"), instrument.value(QStringLiteral("instrumentTypeId")));
+    market.insert(QStringLiteral("exchangeId"), instrument.value(QStringLiteral("exchangeId")));
+    item.insert(QStringLiteral("market"), market);
+
+    QVariantList payload;
+    payload << item;
+
+    const QByteArray body = QJsonDocument::fromVariant(payload).toJson(QJsonDocument::Compact);
+    if (AppLog::debugEnabled())
+        qWarning() << "ETORO ADD WATCHLIST ITEM PAYLOAD:" << body;
+
+    QNetworkReply *reply = m_nam->post(req, body);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply, watchlistId, instrument]() {
+        const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray body = reply->readAll();
+        const QNetworkReply::NetworkError netError = reply->error();
+        reply->deleteLater();
+        if (AppLog::debugEnabled())
+        {
+            qWarning() << "ETORO ADD WATCHLIST ITEM STATUS:" << httpStatus;
+            qWarning() << "ETORO ADD WATCHLIST ITEM BODY:" << body;
+        }
+
+        if (netError != QNetworkReply::NoError) {
+            emit requestFailed(reply->errorString(), httpStatus, body);
+            return;
+        }
+
+        emit watchlistItemAdded(watchlistId, instrument);
+    });
+}
+
+void EtoroWatchlistService::createWatchlist(const QString &name,
+                                            const QString &apiKey,
+                                            const QString &userKey)
+{
+    QNetworkRequest req = NetworkUtils::buildAuthenticatedRequest(
+                QStringLiteral("/watchlists"),
+                apiKey,
+                userKey);
+
+    QUrl url = req.url();
+    QUrlQuery query(url);
+    query.addQueryItem(QStringLiteral("type"), QStringLiteral("Static"));
+    query.addQueryItem(QStringLiteral("name"), name.trimmed());
+    url.setQuery(query);
+    req.setUrl(url);
+    if (AppLog::debugEnabled())
+        qWarning() << "ETORO CREATE WATCHLIST URL:" << req.url().toString();
+
+    QNetworkReply *reply = m_nam->post(req, QByteArray());
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply, name]() {
+        const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray body = reply->readAll();
+        const QNetworkReply::NetworkError netError = reply->error();
+        reply->deleteLater();
+        if (AppLog::debugEnabled())
+        {
+            qWarning() << "ETORO CREATE WATCHLIST STATUS:" << httpStatus;
+            qWarning() << "ETORO CREATE WATCHLIST BODY:" << body;
+        }
+
+        if (netError != QNetworkReply::NoError) {
+            emit requestFailed(reply->errorString(), httpStatus, body);
+            return;
+        }
+
+        QString watchlistId;
+
+        QJsonParseError pe{};
+        const QJsonDocument doc = QJsonDocument::fromJson(body, &pe);
+        if (pe.error == QJsonParseError::NoError && doc.isObject()) {
+            const QVariantMap root = doc.object().toVariantMap();
+
+            watchlistId = root.value(QStringLiteral("watchlistId")).toString();
+            if (watchlistId.isEmpty())
+                watchlistId = root.value(QStringLiteral("id")).toString();
+
+            const QVariantList watchlists = root.value(QStringLiteral("watchlists")).toList();
+            if (watchlistId.isEmpty() && !watchlists.isEmpty()) {
+                const QVariantMap wl = watchlists.first().toMap();
+                watchlistId = wl.value(QStringLiteral("watchlistId")).toString();
+                if (watchlistId.isEmpty())
+                    watchlistId = wl.value(QStringLiteral("id")).toString();
+            }
+        }
+
+        emit watchlistCreated(watchlistId, name.trimmed());
+    });
+}
+
+void EtoroWatchlistService::renameWatchlist(const QString &watchlistId,
+                                            const QString &name,
+                                            const QString &apiKey,
+                                            const QString &userKey)
+{
+    QNetworkRequest req = NetworkUtils::buildAuthenticatedRequest(
+                QStringLiteral("/watchlists/%1").arg(watchlistId),
+                apiKey,
+                userKey);
+
+    QUrl url = req.url();
+    QUrlQuery query(url);
+    query.addQueryItem(QStringLiteral("newName"), name.trimmed());
+    url.setQuery(query);
+    req.setUrl(url);
+    if (AppLog::debugEnabled())
+        qWarning() << "ETORO RENAME WATCHLIST URL:" << req.url().toString();
+
+    QBuffer *buffer = new QBuffer;
+    buffer->setData(QByteArray());
+    buffer->open(QIODevice::ReadOnly);
+
+    QNetworkReply *reply = m_nam->sendCustomRequest(req, QByteArrayLiteral("PUT"), buffer);
+    buffer->setParent(reply);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply, watchlistId, name]() {
+        const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray body = reply->readAll();
+        const QNetworkReply::NetworkError netError = reply->error();
+        reply->deleteLater();
+        if (AppLog::debugEnabled())
+        {
+            qWarning() << "ETORO RENAME WATCHLIST STATUS:" << httpStatus;
+            qWarning() << "ETORO RENAME WATCHLIST BODY:" << body;
+        }
+
+        if (netError != QNetworkReply::NoError) {
+            emit requestFailed(reply->errorString(), httpStatus, body);
+            return;
+        }
+
+        emit watchlistRenamed(watchlistId, name.trimmed());
+    });
+}
+
+void EtoroWatchlistService::deleteWatchlist(const QString &watchlistId,
+                                            const QString &apiKey,
+                                            const QString &userKey)
+{
+    QNetworkRequest req = NetworkUtils::buildAuthenticatedRequest(
+                QStringLiteral("/watchlists/%1").arg(watchlistId),
+                apiKey,
+                userKey);
+    if (AppLog::debugEnabled())
+        qWarning() << "ETORO DELETE WATCHLIST URL:" << req.url().toString();
+
+    QBuffer *buffer = new QBuffer;
+    buffer->setData(QByteArray());
+    buffer->open(QIODevice::ReadOnly);
+
+    QNetworkReply *reply = m_nam->sendCustomRequest(req, QByteArrayLiteral("DELETE"), buffer);
+    buffer->setParent(reply);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply, watchlistId]() {
+        const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray body = reply->readAll();
+        const QNetworkReply::NetworkError netError = reply->error();
+        reply->deleteLater();
+        if (AppLog::debugEnabled())
+        {
+            qWarning() << "ETORO DELETE WATCHLIST STATUS:" << httpStatus;
+            qWarning() << "ETORO DELETE WATCHLIST BODY:" << body;
+        }
+
+        if (netError != QNetworkReply::NoError) {
+            emit requestFailed(reply->errorString(), httpStatus, body);
+            return;
+        }
+
+        emit watchlistDeleted(watchlistId);
+    });
+}
+
+void EtoroWatchlistService::removeInstrumentFromWatchlist(const QString &watchlistId,
+                                                          const QVariantMap &instrument,
+                                                          const QString &apiKey,
+                                                          const QString &userKey)
+{
+    QNetworkRequest req = NetworkUtils::buildAuthenticatedRequest(
+                QStringLiteral("/watchlists/%1/items").arg(watchlistId),
+                apiKey,
+                userKey);
+    req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+
+    QVariantMap item;
+    item.insert(QStringLiteral("ItemId"), instrument.value(QStringLiteral("instrumentId")).toInt());
+    item.insert(QStringLiteral("ItemType"), QStringLiteral("Instrument"));
+    item.insert(QStringLiteral("ItemRank"), instrument.value(QStringLiteral("itemRank")).toInt());
+
+    QVariantList payload;
+    payload << item;
+
+    const QByteArray body = QJsonDocument::fromVariant(payload).toJson(QJsonDocument::Compact);
+    if (AppLog::debugEnabled())
+        qWarning() << "ETORO REMOVE WATCHLIST ITEM PAYLOAD:" << body;
+
+    QBuffer *buffer = new QBuffer;
+    buffer->setData(body);
+    buffer->open(QIODevice::ReadOnly);
+
+    QNetworkReply *reply = m_nam->sendCustomRequest(req, QByteArrayLiteral("DELETE"), buffer);
+    buffer->setParent(reply);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply, watchlistId, instrument]() {
+        const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray body = reply->readAll();
+        const QNetworkReply::NetworkError netError = reply->error();
+        reply->deleteLater();
+        if (AppLog::debugEnabled())
+        {
+            qWarning() << "ETORO REMOVE WATCHLIST ITEM STATUS:" << httpStatus;
+            qWarning() << "ETORO REMOVE WATCHLIST ITEM BODY:" << body;
+        }
+
+        if (netError != QNetworkReply::NoError) {
+            emit requestFailed(reply->errorString(), httpStatus, body);
+            return;
+        }
+
+        emit watchlistItemRemoved(watchlistId, instrument);
     });
 }
 
