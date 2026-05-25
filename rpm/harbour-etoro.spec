@@ -1,7 +1,7 @@
 Name:       harbour-etoro
 Summary:    eToro trading client for Sailfish OS
 Version:    0.6.0
-Release:    1
+Release:    2
 Group:      Applications/Finance
 License:    GPL-3.0-or-later
 URL:        https://github.com/edp17/harbour-etoro

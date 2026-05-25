@@ -57,6 +57,12 @@ Page {
                 return j
         }
 
+        for (var k = 0; k < list.length; ++k) {
+            var name = String(list[k].name || "")
+            if (name !== "" && name !== qsTr("Favourites") && name !== qsTr("Recently Invested"))
+                return k
+        }
+
         return list.length > 0 ? 0 : -1
     }
 
@@ -375,7 +381,7 @@ Page {
                         visible: !etoroClient.watchlistItemsLoading && page.filteredItems.length === 0
                         text: page.filterText.trim().length > 0
                               ? qsTr("No asset match the current filter.")
-                              : qsTr("No assets in this watchlist.")
+                              : qsTr("No assets in this watchlist yet. Select another watchlist or add assets from Discover.")
                         color: Theme.secondaryColor
                         font.pixelSize: Theme.fontSizeSmall
                         wrapMode: Text.Wrap

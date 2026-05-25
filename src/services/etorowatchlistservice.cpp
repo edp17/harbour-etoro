@@ -17,6 +17,22 @@ EtoroWatchlistService::EtoroWatchlistService(QNetworkAccessManager *nam, QObject
 {
 }
 
+static QString cleanWatchlistName(const QString &name)
+{
+    const QString trimmed = name.trimmed();
+
+    if (trimmed == QStringLiteral("watchlistItem.emptyState.favouriteWatchlistName"))
+        return QStringLiteral("Favourites");
+
+    if (trimmed == QStringLiteral("watchlistItem.emptyState.recentlyInvestedWatchlistName"))
+        return QStringLiteral("Recently Invested");
+
+    if (trimmed.isEmpty())
+        return QStringLiteral("Unnamed watchlist");
+
+    return trimmed;
+}
+
 void EtoroWatchlistService::fetchWatchlists(const QString &apiKey, const QString &userKey)
 {
     QNetworkRequest req = NetworkUtils::buildAuthenticatedRequest(
@@ -96,10 +112,10 @@ void EtoroWatchlistService::fetchWatchlist(const QString &watchlistId,
 
         if (!watchlists.isEmpty()) {
             const QVariantMap wl = watchlists.first().toMap();
-            watchlistName = wl.value("name").toString();
+            watchlistName = cleanWatchlistName(wl.value("name").toString());
             items = wl.value("items").toList();
         } else {
-            watchlistName = root.value("name").toString();
+            watchlistName = cleanWatchlistName(root.value("name").toString());
             items = parseSingleWatchlistItems(root);
         }
 
@@ -394,7 +410,7 @@ QVariantList EtoroWatchlistService::parseWatchlistsRoot(const QVariantMap &root)
         QVariantMap wl;
 
         wl.insert("watchlistId", in.value("watchlistId"));
-        wl.insert("name", in.value("name"));
+        wl.insert("name", cleanWatchlistName(in.value("name").toString()));
         wl.insert("watchlistType", in.value("watchlistType"));
         wl.insert("totalItems", in.value("totalItems"));
         wl.insert("isDefault", in.value("isDefault"));
