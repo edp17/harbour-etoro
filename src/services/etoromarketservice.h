@@ -24,11 +24,18 @@ public:
                            const QString &apiKey,
                            const QString &userKey);
 
+    void fetchInstrumentRestrictions(int instrumentId,
+                                     const QString &symbol,
+                                     const QString &apiKey,
+                                     const QString &userKey);
+
 signals:
     void instrumentMetadataReady(const QVariantMap &metadataById);
     void instrumentRatesReady(const QVariantMap &ratesById);
     void requestFailed(const QString &errorString, int httpStatus, const QByteArray &body);
     void instrumentSearchReady(const QVariantList &results);
+    void instrumentRestrictionsReady(int instrumentId, const QVariantMap &restrictions);
+    void instrumentRestrictionsFailed(int instrumentId, const QString &errorString);
 
 private:
     void searchInstrumentsByName(const QString &query,

@@ -92,7 +92,7 @@ Item {
 
             Label {
                 width: parent.width
-                text: qsTr("This removes the whole watchlist, not just its instruments.")
+                text: qsTr("This removes the whole watchlist, not just its assets.")
                 color: Theme.secondaryColor
                 font.pixelSize: Theme.fontSizeSmall
                 wrapMode: Text.Wrap
@@ -151,8 +151,7 @@ Item {
             if (!root.visible)
                 return
 
-            if (etoroClient.lastError !== ""
-                    && etoroClient.lastError !== "Watchlist deleted.") {
+            if (etoroClient.lastError !== "") {
                 root.errorText = etoroClient.lastError
             }
         }

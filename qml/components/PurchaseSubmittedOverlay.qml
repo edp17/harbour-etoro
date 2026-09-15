@@ -27,6 +27,46 @@ Item {
 
     property bool overlayVisible: false
 
+    function orderIdText() {
+        var order = etoroClient.lastOrderStatus || {}
+        return String(order.orderId || order.OrderId || order.orderID || "")
+    }
+
+    function statusText() {
+        if (etoroClient.orderStatusLoading)
+            return qsTr("Checking order status…")
+
+        var order = etoroClient.lastOrderStatus || {}
+        var status = order.status
+        if (status && typeof status === "object")
+            status = status.name
+
+        var raw = status ? String(status) : "Submitted"
+        switch (raw.toLowerCase()) {
+        case "filled": return qsTr("Filled")
+        case "rejected": return qsTr("Rejected")
+        case "cancelled":
+        case "canceled": return qsTr("Cancelled")
+        case "failed": return qsTr("Failed")
+        case "expired": return qsTr("Expired")
+        case "pending": return qsTr("Pending")
+        default: return raw === "Submitted" ? qsTr("Submitted") : raw
+        }
+    }
+
+    function statusColor() {
+        var status = (etoroClient.lastOrderStatus || {}).status
+        if (status && typeof status === "object")
+            status = status.name
+        status = String(status || "").toLowerCase()
+        if (status.indexOf("filled") >= 0)
+            return Theme.highlightColor
+        if (status.indexOf("reject") >= 0 || status.indexOf("fail") >= 0
+                || status.indexOf("cancel") >= 0 || status.indexOf("expire") >= 0)
+            return Theme.errorColor
+        return Theme.primaryColor
+    }
+
     function open() {
         overlayVisible = true
         etoroClient.registerUserActivity()
@@ -83,6 +123,36 @@ Item {
                 wrapMode: Text.Wrap
             }
 
+            Label {
+                width: parent.width
+                visible: root.orderIdText().length > 0
+                text: qsTr("Order ID: %1").arg(root.orderIdText())
+                color: Theme.secondaryColor
+                font.pixelSize: Theme.fontSizeSmall
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+            }
+
+            Label {
+                width: parent.width
+                text: qsTr("Status: %1").arg(root.statusText())
+                color: root.statusColor()
+                font.pixelSize: Theme.fontSizeMedium
+                font.bold: true
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+            }
+
+            Label {
+                width: parent.width
+                visible: etoroClient.orderStatusError.length > 0
+                text: etoroClient.orderStatusError
+                color: Theme.errorColor
+                font.pixelSize: Theme.fontSizeSmall
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+            }
+
             Row {
                 width: parent.width
                 spacing: Theme.paddingMedium
@@ -98,11 +168,10 @@ Item {
 
                 Button {
                     width: (parent.width - Theme.paddingMedium) / 2
-                    text: qsTr("Refresh positions")
+                    text: qsTr("Refresh status")
 
                     onClicked: {
-                        etoroClient.refreshPortfolio()
-                        root.close()
+                        etoroClient.refreshLastOrderStatus()
                     }
                 }
             }

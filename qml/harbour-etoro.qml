@@ -43,4 +43,8 @@ ApplicationWindow {
         anchors.fill: parent
         z: 9999
     }
+
+    SuccessBanner {
+        anchors.fill: parent
+    }
 }

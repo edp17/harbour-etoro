@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(PkgConfig REQUIRED)
-find_package(Qt5 COMPONENTS Core Network Qml Quick REQUIRED)
+find_package(Qt5 COMPONENTS Core LinguistTools Network Qml Quick REQUIRED)
 
 pkg_check_modules(SAILFISHAPP REQUIRED sailfishapp)
 pkg_check_modules(SAILFISHSECRETS REQUIRED sailfishsecrets)
@@ -36,6 +36,9 @@ set(SOURCES
     src/tokenstore.cpp
     src/networkutils.cpp
     src/applog.cpp
+    src/controllers/uimessagecontroller.cpp
+    src/controllers/orderstatuscontroller.cpp
+    src/controllers/pricechartcontroller.cpp
     src/services/etoroportfolioservice.cpp
     src/services/etoromarketservice.cpp
     src/services/etorotradingservice.cpp
@@ -47,7 +50,11 @@ set(HEADERS
     src/etoroclient.h
     src/tokenstore.h
     src/networkutils.h
+    src/settingsutils.h
     src/applog.h
+    src/controllers/uimessagecontroller.h
+    src/controllers/orderstatuscontroller.h
+    src/controllers/pricechartcontroller.h
     src/services/etoroportfolioservice.h
     src/services/etoromarketservice.h
     src/services/etorotradingservice.h
@@ -55,23 +62,18 @@ set(HEADERS
     src/services/etorohistoryservice.h
 )
 
-set(QML_SOURCES
-    qml/harbour-etoro.qml
-    qml/pages/MainPage.qml
-    qml/pages/SettingsPage.qml
-    qml/pages/AboutPage.qml
-    qml/components/UnlockOverlay.qml
-    qml/components/PinUnlockDialog.qml
-    qml/cover/CoverPage.qml
-)
-
 set(DESKTOP_FILE harbour-etoro.desktop)
 set(APP_ICON icons/172x172/harbour-etoro.png)
+
+set(TRANSLATION_SOURCES translations/harbour-etoro_hu.ts)
+qt5_add_translation(TRANSLATION_FILES ${TRANSLATION_SOURCES})
+add_custom_target(harbour-etoro-translations ALL DEPENDS ${TRANSLATION_FILES})
 
 add_executable(harbour-etoro
     ${SOURCES}
     ${HEADERS}
 )
+add_dependencies(harbour-etoro harbour-etoro-translations)
 
 target_compile_options(harbour-etoro PRIVATE
     ${SAILFISHAPP_CFLAGS_OTHER}
@@ -99,9 +101,6 @@ install(FILES ${APP_ICON}
     DESTINATION /usr/share/icons/hicolor/172x172/apps
 )
 
-#install(FILES ${QML_SOURCES}
-#    DESTINATION /usr/share/harbour-etoro/qml
-#)
 install(FILES
     qml/harbour-etoro.qml
     DESTINATION /usr/share/harbour-etoro/qml
@@ -135,10 +134,22 @@ install(FILES
     qml/components/RemoveFromWatchlistOverlay.qml
     qml/components/AddToWatchlistOverlay.qml
     qml/components/HistoryCustomRangeOverlay.qml
+    qml/components/SuccessBanner.qml
+    qml/components/OrderStatusCard.qml
+    qml/components/PriceChartCard.qml
     DESTINATION /usr/share/harbour-etoro/qml/components
+)
+
+install(FILES
+    qml/js/AssetUtils.js
+    DESTINATION /usr/share/harbour-etoro/qml/js
 )
 
 install(FILES
     qml/cover/CoverPage.qml
     DESTINATION /usr/share/harbour-etoro/qml/cover
+)
+
+install(FILES ${TRANSLATION_FILES}
+    DESTINATION /usr/share/harbour-etoro/translations
 )

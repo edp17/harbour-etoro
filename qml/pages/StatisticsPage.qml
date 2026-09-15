@@ -18,6 +18,7 @@
 */
 import QtQuick 2.0
 import Sailfish.Silica 1.0
+import "../js/AssetUtils.js" as AssetUtils
 
 Page {
     id: page
@@ -162,15 +163,6 @@ Page {
             netProfit: totalProfit,
             trades: totalTrades
         }
-    }
-
-    function instrumentIcon50(instrumentId) {
-        if (instrumentId === undefined || instrumentId === null || instrumentId === "")
-            return ""
-
-        return "https://etoro-cdn.etorostatic.com/market-avatars/"
-                + String(instrumentId)
-                + "/50x50.png"
     }
 
     onSortModeChanged: rebuildStats()
@@ -419,7 +411,7 @@ Page {
                                 Image {
                                     id: logoImage
                                     anchors.centerIn: parent
-                                    source: instrumentIcon50(modelData.instrumentId)
+                                    source: AssetUtils.icon50(modelData.instrumentId)
                                     width: 35
                                     height: 35
                                     fillMode: Image.PreserveAspectFit

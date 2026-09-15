@@ -18,6 +18,7 @@
 */
 import QtQuick 2.0
 import Sailfish.Silica 1.0
+import "../js/AssetUtils.js" as AssetUtils
 
 Page {
     id: page
@@ -38,15 +39,6 @@ Page {
                 + qsTr("Ask: ") + amountText(q.ask, 6)
                 + "   •   "
                 + qsTr("Last: ") + amountText(q.lastExecutionPrice, 6)
-    }
-
-    function instrumentIcon50(instrumentId) {
-        if (instrumentId === undefined || instrumentId === null || instrumentId === "")
-            return ""
-
-        return "https://etoro-cdn.etorostatic.com/market-avatars/"
-                + String(instrumentId)
-                + "/50x50.png"
     }
 
     Component.onCompleted: {
@@ -73,33 +65,12 @@ Page {
                 }
             }
             MenuItem {
-                text: qsTr("Portfolio")
-                enabled: etoroClient.openPositions.length > 0
-                onClicked: {
-                    etoroClient.registerUserActivity()
-                    pageStack.push(Qt.resolvedUrl("PortfolioPage.qml"))
-                }
-            }
-            MenuItem {
-                text: qsTr("Discover")
-                enabled: !etoroClient.locked && etoroClient.hasCredentials
-                onClicked: pageStack.push(Qt.resolvedUrl("DiscoverPage.qml"))
-            }
-            MenuItem {
                 text: qsTr("Watchlists")
                 enabled: etoroClient.hasCredentials && !etoroClient.busy
                 onClicked: {
                     etoroClient.registerUserActivity()
                     etoroClient.refreshWatchlists()
                     pageStack.push(Qt.resolvedUrl("WatchlistsPage.qml"))
-                }
-            }
-            MenuItem {
-                text: qsTr("History")
-                enabled: !etoroClient.demoMode && etoroClient.hasCredentials && !etoroClient.busy
-                onClicked: {
-                    etoroClient.registerUserActivity()
-                    pageStack.push(Qt.resolvedUrl("HistoryPage.qml"))
                 }
             }
             MenuItem {
@@ -151,6 +122,7 @@ Page {
             }
 
             Rectangle {
+                id: portfolioSummaryCard
                 x: Theme.horizontalPageMargin
                 width: parent.width - 2 * x
                 height: summaryCard.height + Theme.paddingLarge * 2
@@ -168,7 +140,7 @@ Page {
                     spacing: Theme.paddingSmall
 
                     Label {
-                        width: parent.width
+                        width: parent.width - portfolioArrow.width - Theme.paddingSmall
                         text: qsTr("Portfolio summary")
                         color: Theme.highlightColor
                         font.pixelSize: Theme.fontSizeSmall
@@ -240,6 +212,25 @@ Page {
                         }
                     }
                 }
+
+                Image {
+                    id: portfolioArrow
+                    anchors.right: parent.right
+                    anchors.rightMargin: Theme.paddingMedium
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Theme.iconSizeLarge
+                    height: Theme.iconSizeLarge
+                    source: "image://theme/icon-m-right"
+                    opacity: 0.8
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        etoroClient.registerUserActivity()
+                        pageStack.push(Qt.resolvedUrl("PortfolioPage.qml"))
+                    }
+                }
             }
 
 
@@ -298,7 +289,7 @@ Page {
                                     Image {
                                         id: logoImage
                                         anchors.centerIn: parent
-                                        source: instrumentIcon50(modelData.instrumentId)
+                                        source: AssetUtils.icon50(modelData.instrumentId)
                                         width: 50
                                         height: 50
                                         fillMode: Image.PreserveAspectFit
@@ -308,7 +299,7 @@ Page {
                             Label {
                                 width: parent.width * 0.62 - logoSlot.width - Theme.paddingSmall
                                 anchors.top: logoSlot.top
-                                text: modelData.displayName || (qsTr("Instrument ") + modelData.instrumentId)
+                                text: modelData.displayName || (qsTr("Asset ") + modelData.instrumentId)
                                 color: Theme.primaryColor
                                 font.pixelSize: Theme.fontSizeMedium * 0.85
                                 truncationMode: TruncationMode.Fade

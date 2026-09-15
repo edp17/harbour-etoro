@@ -298,17 +298,10 @@ Item {
             if (!root.visible)
                 return
 
-            if (root.addAfterCreateWatchlist
-                    && (etoroClient.lastError === ""
-                        || etoroClient.lastError === "Watchlist created."))
-                return
-
-            if (root.addAfterCreateWatchlist)
+            if (root.addAfterCreateWatchlist && etoroClient.lastError !== "")
                 root.addAfterCreateWatchlist = false
 
-            if (etoroClient.lastError !== ""
-                    && etoroClient.lastError !== "Instrument added to watchlist."
-                    && etoroClient.lastError !== "Watchlist created.")
+            if (etoroClient.lastError !== "")
                 root.errorText = etoroClient.lastError
         }
     }

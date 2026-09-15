@@ -19,9 +19,12 @@
 import QtQuick 2.0
 import Sailfish.Silica 1.0
 import "../components"
+import "../js/AssetUtils.js" as AssetUtils
 
 Page {
     id: page
+
+    Component.onDestruction: etoroClient.clearPriceChart()
 
     property var positionData: ({ })
     property bool readOnlyMode: !etoroClient.tradingEnabled
@@ -31,19 +34,23 @@ Page {
     property string closeSuccessText: ""
 
     function restrictionValue(key) {
-        if (page.positionData && page.positionData[key] !== undefined)
+        var revision = etoroClient.instrumentRestrictionsRevision
+        var cached = etoroClient.restrictionsForInstrument(page.positionData.instrumentId)
+        if (cached && cached[key] !== undefined && cached[key] !== null && cached[key] !== "")
+            return cached[key]
+
+        if (page.positionData && page.positionData[key] !== undefined
+                && page.positionData[key] !== null && page.positionData[key] !== "")
             return page.positionData[key]
 
         if (page.positionData.positions && page.positionData.positions.length > 0) {
             for (var i = 0; i < page.positionData.positions.length; ++i) {
-                if (page.positionData.positions[i][key] !== undefined)
+                if (page.positionData.positions[i][key] !== undefined
+                        && page.positionData.positions[i][key] !== null
+                        && page.positionData.positions[i][key] !== "")
                     return page.positionData.positions[i][key]
             }
         }
-
-        var cached = etoroClient.restrictionsForInstrument(page.positionData.instrumentId)
-        if (cached && cached[key] !== undefined)
-            return cached[key]
 
         return undefined
     }
@@ -58,25 +65,18 @@ Page {
         if (page.restrictionValue("isCurrentlyTradable") === false)
             return qsTr("This market is not currently tradable.")
 
+        if (etoroClient.restrictionLookupInstrumentId === Number(page.positionData.instrumentId || 0)) {
+            if (etoroClient.restrictionLookupLoading)
+                return qsTr("Checking market availability…")
+            if (etoroClient.restrictionLookupError.length > 0)
+                return etoroClient.restrictionLookupError
+        }
+
         return ""
     }
 
     function buyAllowed() {
         return page.buyRestrictedReason() === ""
-    }
-
-    function instrumentTypeName(typeId) {
-        typeId = Number(typeId || 0)
-
-        switch (typeId) {
-        case 1: return qsTr("Currencies")
-        case 2: return qsTr("Commodities")
-        case 4: return qsTr("Indices")
-        case 5: return qsTr("Stocks")
-        case 6: return qsTr("ETFs")
-        case 10: return qsTr("Crypto")
-        default: return qsTr("Other")
-        }
     }
 
     function effectiveInstrumentTypeId() {
@@ -138,14 +138,6 @@ Page {
         return Qt.formatDateTime(d, "dd/MM/yyyy")
     }
 
-    function profitPercent(item) {
-        var invested = Number(item.invested || 0)
-        var pnl = Number(item.netProfit || 0)
-        if (invested === 0)
-            return 0
-        return (pnl / invested) * 100.0
-    }
-
     function netValue(item) {
         return investedAmount(item) + Number(item.netProfit || 0)
     }
@@ -165,15 +157,6 @@ Page {
 
     function detailPageTitle(item) {
         return item.isBuy ? qsTr("Buy position") : qsTr("Sell position")
-    }
-
-    function instrumentIcon50(instrumentId) {
-        if (instrumentId === undefined || instrumentId === null || instrumentId === "")
-            return ""
-
-        return "https://etoro-cdn.etorostatic.com/market-avatars/"
-                + String(instrumentId)
-                + "/50x50.png"
     }
 
     function refreshPositionDataFromGroupedModel() {
@@ -220,6 +203,11 @@ Page {
         onGroupedOpenPositionsChanged: {
             page.refreshPositionDataFromGroupedModel()
         }
+    }
+
+    Component.onCompleted: {
+        etoroClient.refreshInstrumentRestrictions(page.positionData.instrumentId,
+                                                  String(page.positionData.symbol || ""))
     }
 
     SilicaFlickable {
@@ -326,7 +314,7 @@ Page {
                             Image {
                                 id: logoImage
                                 anchors.centerIn: parent
-                                source: instrumentIcon50(page.positionData.instrumentId)
+                                source: AssetUtils.icon50(page.positionData.instrumentId)
                                 width: 100
                                 height: 100
                                 fillMode: Image.PreserveAspectFit
@@ -363,7 +351,7 @@ Page {
 
                             Label {
                                 width: parent.width
-                                text: page.instrumentTypeName(page.effectiveInstrumentTypeId())
+                                text: AssetUtils.typeName(page.effectiveInstrumentTypeId())
                                 color: Theme.secondaryColor
                                 font.pixelSize: Theme.fontSizeSmall
                                 horizontalAlignment: Text.AlignRight
@@ -413,7 +401,7 @@ Page {
                     TradePriceActionRow {
                         width: parent.width
                         sideText: qsTr("Sell")
-                        rawValue: (etoroClient.quoteForPositionInstrument(page.positionData.instrumentId) || {}).ask
+                        rawValue: (etoroClient.quoteForPositionInstrument(page.positionData.instrumentId) || {}).bid
                         decimals: 4
                         tradingEnabled: etoroClient.tradingEnabled
                         actionEnabled: false
@@ -425,7 +413,7 @@ Page {
                     TradePriceActionRow {
                         width: parent.width
                         sideText: qsTr("Buy")
-                        rawValue: (etoroClient.quoteForPositionInstrument(page.positionData.instrumentId) || {}).bid
+                        rawValue: (etoroClient.quoteForPositionInstrument(page.positionData.instrumentId) || {}).ask
                         decimals: 4
                         tradingEnabled: etoroClient.tradingEnabled
                         actionEnabled: page.buyAllowed()
@@ -450,6 +438,12 @@ Page {
                         wrapMode: Text.Wrap
                     }
                 }
+            }
+
+            PriceChartCard {
+                width: parent.width
+                instrumentId: Number(page.positionData.instrumentId || 0)
+                assetName: String(page.positionData.symbol || page.positionData.displayName || "")
             }
 
             Rectangle {
@@ -570,7 +564,7 @@ Page {
 
                                     Label {
                                         width: parent.width * 0.18
-                                        text: amountText(profitPercent(modelData), 1)
+                                        text: amountText(AssetUtils.profitPercent(modelData), 1)
                                         color: Number(modelData.netProfit || 0) >= 0 ? Theme.highlightColor : Theme.errorColor
                                         font.pixelSize: Theme.fontSizeSmall
                                         horizontalAlignment: Text.AlignRight
@@ -628,7 +622,7 @@ Page {
         instrumentId: Number(page.positionData.instrumentId || 0)
         symbol: page.positionData.symbol || ""
         displayName: page.positionData.displayName || ""
-        unitPrice: (etoroClient.quoteForPositionInstrument(page.positionData.instrumentId) || {}).bid
+        unitPrice: (etoroClient.quoteForPositionInstrument(page.positionData.instrumentId) || {}).ask
 
         onOrderSubmitted: {
             purchaseSubmittedOverlay.open()

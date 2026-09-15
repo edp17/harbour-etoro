@@ -18,6 +18,7 @@
 */
 import QtQuick 2.0
 import Sailfish.Silica 1.0
+import "../js/AssetUtils.js" as AssetUtils
 import "../components"
 
 
@@ -30,7 +31,8 @@ Page {
     property bool showFilterControls: etoroClient.portfolioShowFilter
     property bool showSortControls: etoroClient.portfolioShowSort
     property string viewMode: etoroClient.portfolioViewMode   // "card" or "compact"
-    property bool sortDescending: true
+    property bool sortDescending: etoroClient.portfolioSortDescending
+    property bool sortControlsReady: false
     property bool readOnlyMode: !etoroClient.tradingEnabled
 
     function amountText(value, decimals) {
@@ -71,14 +73,6 @@ Page {
         return name.slice(0, 6)
     }
 
-    function profitPercent(item) {
-        var invested = Number(item.invested || 0)
-        var pnl = Number(item.netProfit || 0)
-        if (invested === 0)
-            return 0
-        return (pnl / invested) * 100.0
-    }
-
     function netValue(item) {
         return Number(item.invested || 0) + Number(item.netProfit || 0)
     }
@@ -91,16 +85,26 @@ Page {
         return 0
     }
 
-    function compareByInvested(a, b) {
-        var av = Number(a.invested || 0)
-        var bv = Number(b.invested || 0)
-        return page.sortDescending ? (bv - av) : (av - bv)
+    function numericSortValue(item, mode) {
+        if (mode === "pl_percent")
+            return AssetUtils.profitPercent(item)
+        if (mode === "pl")
+            return Number(item.netProfit || 0)
+        if (mode === "net")
+            return netValue(item)
+        return Number(item.invested || 0)
     }
 
-    function compareByProfit(a, b) {
-        var av = Number(a.netProfit || 0)
-        var bv = Number(b.netProfit || 0)
-        return page.sortDescending ? (bv - av) : (av - bv)
+    function compareByNumericMode(a, b) {
+        var av = numericSortValue(a, page.sortMode)
+        var bv = numericSortValue(b, page.sortMode)
+        var difference = page.sortDescending ? (bv - av) : (av - bv)
+        if (difference !== 0)
+            return difference
+
+        var an = String(a.displayName || a.symbol || "").toLowerCase()
+        var bn = String(b.displayName || b.symbol || "").toLowerCase()
+        return an < bn ? -1 : (an > bn ? 1 : 0)
     }
 
     function columnTitle(mode) {
@@ -144,7 +148,7 @@ Page {
 
     function columnValue(mode, item) {
         if (mode === "pl_percent")
-            return percentText(profitPercent(item))
+            return percentText(AssetUtils.profitPercent(item))
 
         if (mode === "pl")
             return amountText(item.netProfit, 2)
@@ -155,10 +159,10 @@ Page {
         var quote = etoroClient.quoteForPositionInstrument(item.instrumentId)
 
         if (mode === "buy")
-            return numberText(quote ? quote.bid : "", 4)
+            return numberText(quote ? quote.ask : "", 4)
 
         if (mode === "sell")
-            return numberText(quote ? quote.ask : "", 4)
+            return numberText(quote ? quote.bid : "", 4)
 
         return ""
     }
@@ -191,21 +195,10 @@ Page {
 
         if (sortMode === "name")
             out.sort(compareByName)
-        else if (sortMode === "profit")
-            out.sort(compareByProfit)
         else
-            out.sort(compareByInvested)
+            out.sort(compareByNumericMode)
 
         filteredPositions = out
-    }
-
-    function instrumentIcon50(instrumentId) {
-        if (instrumentId === undefined || instrumentId === null || instrumentId === "")
-            return ""
-
-        return "https://etoro-cdn.etorostatic.com/market-avatars/"
-                + String(instrumentId)
-                + "/50x50.png"
     }
 
     function setCompactColumn(which, newMode) {
@@ -302,9 +295,9 @@ Page {
 
                     var quote = etoroClient.quoteForPositionInstrument(rowData.instrumentId) || {}
                     if (columnMode === "buy")
-                        return quote.bid
-                    if (columnMode === "sell")
                         return quote.ask
+                    if (columnMode === "sell")
+                        return quote.bid
                     return undefined
                 }
                 decimals: 4
@@ -357,12 +350,18 @@ Page {
     Component.onCompleted: {
         filterField.text = etoroClient.portfolioFilterText
 
-        if (sortMode === "profit")
+        if (sortMode === "pl_percent")
             sortCombo.currentIndex = 1
-        else if (sortMode === "name")
+        else if (sortMode === "pl")
             sortCombo.currentIndex = 2
+        else if (sortMode === "net")
+            sortCombo.currentIndex = 3
+        else if (sortMode === "name")
+            sortCombo.currentIndex = 4
         else
             sortCombo.currentIndex = 0
+
+        page.sortControlsReady = true
 
         compactCol1Combo.currentIndex = columnIndexFor(etoroClient.portfolioColumn1)
         compactCol2Combo.currentIndex = columnIndexFor(etoroClient.portfolioColumn2)
@@ -376,6 +375,15 @@ Page {
         contentHeight: contentColumn.height + Theme.paddingLarge
 
         PullDownMenu {
+            MenuItem {
+                text: qsTr("History")
+                enabled: !etoroClient.demoMode && etoroClient.hasCredentials && !etoroClient.busy
+                onClicked: {
+                    etoroClient.registerUserActivity()
+                    pageStack.push(Qt.resolvedUrl("HistoryPage.qml"))
+                }
+            }
+
             MenuItem {
                 text: qsTr("Refresh")
                 enabled: !etoroClient.busy && !etoroClient.locked
@@ -438,6 +446,8 @@ Page {
                     }
                 }
             }
+
+            OrderStatusCard { }
 
             Rectangle {
                 x: Theme.horizontalPageMargin
@@ -544,17 +554,25 @@ Page {
 
                             menu: ContextMenu {
                                 MenuItem { text: qsTr("Invested amount") }
+                                MenuItem { text: qsTr("P/L (%)") }
                                 MenuItem { text: qsTr("Unrealized P/L") }
+                                MenuItem { text: qsTr("Net value") }
                                 MenuItem { text: qsTr("Name") }
                             }
 
                             currentIndex: 0
 
                             onCurrentIndexChanged: {
+                                if (!page.sortControlsReady)
+                                    return
                                 if (currentIndex === 0)
                                     page.sortMode = "invested"
                                 else if (currentIndex === 1)
-                                    page.sortMode = "profit"
+                                    page.sortMode = "pl_percent"
+                                else if (currentIndex === 2)
+                                    page.sortMode = "pl"
+                                else if (currentIndex === 3)
+                                    page.sortMode = "net"
                                 else
                                     page.sortMode = "name"
 
@@ -579,6 +597,7 @@ Page {
                                          : "image://theme/icon-m-up"
                             onClicked: {
                                 page.sortDescending = !page.sortDescending
+                                etoroClient.setPortfolioSortDescending(page.sortDescending)
                                 etoroClient.registerUserActivity()
                             }
                         }
@@ -769,7 +788,7 @@ Page {
 
                             Image {
                                 id: cardLogoImage
-                                source: instrumentIcon50(modelData.instrumentId)
+                                source: AssetUtils.icon50(modelData.instrumentId)
                                 width: 75
                                 height: 75
                                 fillMode: Image.PreserveAspectFit
@@ -800,7 +819,7 @@ Page {
 
                             Label {
                                 width: parent.width * 0.34
-                                text: modelData.displayName || (qsTr("Instrument ") + modelData.instrumentId)
+                                text: modelData.displayName || (qsTr("Asset ") + modelData.instrumentId)
                                 color: Theme.secondaryColor
                                 font.pixelSize: Theme.fontSizeSmall * 0.9
                                 truncationMode: TruncationMode.Fade
@@ -808,7 +827,7 @@ Page {
 
                             Label {
                                 width: parent.width * 0.66 - Theme.paddingMedium
-                                text: amountText(profitPercent(modelData), 1) + "%"
+                                text: amountText(AssetUtils.profitPercent(modelData), 1) + "%"
                                 color: Number(modelData.netProfit || 0) >= 0 ? Theme.highlightColor : Theme.errorColor
                                 font.pixelSize: Theme.fontSizeSmall
                                 horizontalAlignment: Text.AlignRight
@@ -894,7 +913,7 @@ Page {
 
                             Image {
                                 id: compactLogoImage
-                                source: instrumentIcon50(modelData.instrumentId)
+                                source: AssetUtils.icon50(modelData.instrumentId)
                                 width: 50
                                 height: 50
                                 fillMode: Image.PreserveAspectFit

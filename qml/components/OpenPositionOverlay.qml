@@ -120,13 +120,13 @@ Item {
 
         root.orderSubmitAttempted = true
         root.orderResultIsError = !ok
-        root.orderCompleted = ok
-        if (ok) {
-            root.orderSubmitted()
+        root.orderCompleted = ok && !etoroClient.liveOrderSubmissionEnabled
+        if (root.orderCompleted)
             root.close()
-        }
         root.orderResultMessage = ok
-                ? qsTr("Order submitted. Refreshing portfolio…")
+                ? (etoroClient.liveOrderSubmissionEnabled
+                   ? qsTr("Submitting order…")
+                   : qsTr("Order prepared in preview mode."))
                 : etoroClient.lastError
 
         if (!ok && root.orderResultMessage === "")
@@ -134,6 +134,27 @@ Item {
 
         etoroClient.clearLastError()
         etoroClient.registerUserActivity()
+    }
+
+    Connections {
+        target: etoroClient
+
+        onMarketOrderSubmitted: {
+            if (!root.orderSubmitAttempted || !root.visible)
+                return
+            root.orderCompleted = true
+            root.orderResultIsError = false
+            root.orderSubmitted()
+            root.close()
+        }
+
+        onMarketOrderSubmissionFailed: {
+            if (!root.orderSubmitAttempted || !root.visible)
+                return
+            root.orderCompleted = false
+            root.orderResultIsError = true
+            root.orderResultMessage = message
+        }
     }
 
     Rectangle {
@@ -178,7 +199,7 @@ Item {
                 width: parent.width
                 text: (root.symbol !== "" ? root.symbol : ("#" + root.instrumentId))
                       + " • "
-                      + (root.displayName !== "" ? root.displayName : qsTr("Instrument"))
+                      + (root.displayName !== "" ? root.displayName : qsTr("Asset"))
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
                 font.pixelSize: Theme.fontSizeSmall

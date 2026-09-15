@@ -1,4 +1,5 @@
 #include "tokenstore.h"
+#include "settingsutils.h"
 
 #include <QSettings>
 #include <Sailfish/Secrets/secretmanager.h>
@@ -13,8 +14,6 @@ static const char *SECRET_API_KEY = "etoro-api-key";
 static const char *SECRET_USER_KEY = "etoro-user-key";
 static const char *SECRET_APP_PIN = "etoro-app-pin";
 
-static const char *SETTINGS_ORG = "harbour-etoro";
-static const char *SETTINGS_APP = "harbour-etoro";
 static const char *SETTINGS_GROUP = "auth";
 static const char *SETTINGS_KEY_HAS_API_KEY = "hasStoredApiKey";
 static const char *SETTINGS_KEY_HAS_USER_KEY = "hasStoredUserKey";
@@ -163,7 +162,7 @@ bool TokenStore::clearSecret(const QString &secretName)
 
 bool TokenStore::readFlag(const QString &key) const
 {
-    QSettings settings(QString::fromLatin1(SETTINGS_ORG), QString::fromLatin1(SETTINGS_APP));
+    QSettings settings = SettingsUtils::createSettings();
     settings.beginGroup(QString::fromLatin1(SETTINGS_GROUP));
     const bool value = settings.value(key, false).toBool();
     settings.endGroup();
@@ -172,7 +171,7 @@ bool TokenStore::readFlag(const QString &key) const
 
 void TokenStore::writeFlag(const QString &key, bool value)
 {
-    QSettings settings(QString::fromLatin1(SETTINGS_ORG), QString::fromLatin1(SETTINGS_APP));
+    QSettings settings = SettingsUtils::createSettings();
     settings.beginGroup(QString::fromLatin1(SETTINGS_GROUP));
     settings.setValue(key, value);
     settings.endGroup();

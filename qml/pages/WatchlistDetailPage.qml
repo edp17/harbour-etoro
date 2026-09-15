@@ -19,6 +19,7 @@
 import QtQuick 2.0
 import Sailfish.Silica 1.0
 import "../components"
+import "../js/AssetUtils.js" as AssetUtils
 
 Page {
     id: page
@@ -31,12 +32,14 @@ Page {
     property bool openedFromWatchlist: false
 
     function restrictionValue(key) {
-        if (page.instrumentData && page.instrumentData[key] !== undefined)
-            return page.instrumentData[key]
-
+        var revision = etoroClient.instrumentRestrictionsRevision
         var cached = etoroClient.restrictionsForInstrument(page.instrumentData.instrumentId)
-        if (cached && cached[key] !== undefined)
+        if (cached && cached[key] !== undefined && cached[key] !== null && cached[key] !== "")
             return cached[key]
+
+        if (page.instrumentData && page.instrumentData[key] !== undefined
+                && page.instrumentData[key] !== null && page.instrumentData[key] !== "")
+            return page.instrumentData[key]
 
         return undefined
     }
@@ -110,6 +113,13 @@ Page {
         if (page.restrictionValue("isCurrentlyTradable") === false)
             return qsTr("This market is not currently tradable.")
 
+        if (etoroClient.restrictionLookupInstrumentId === Number(page.instrumentData.instrumentId || 0)) {
+            if (etoroClient.restrictionLookupLoading)
+                return qsTr("Checking market availability…")
+            if (etoroClient.restrictionLookupError.length > 0)
+                return etoroClient.restrictionLookupError
+        }
+
         return ""
     }
 
@@ -125,22 +135,6 @@ Page {
         if (v === undefined || v === null || v === "")
             return "—"
         return Number(v).toLocaleString(Qt.locale(), 'f', decimals)
-    }
-
-    function instrumentIcon50(instrument) {
-        if (instrument.logoUrl)
-            return instrument.logoUrl
-        if (instrument.logo50x50)
-            return instrument.logo50x50
-        if (instrument.logo35x35)
-            return instrument.logo35x35
-        if (instrument.logo150x150)
-            return instrument.logo150x150
-
-        if (instrument.instrumentId === undefined || instrument.instrumentId === null || instrument.instrumentId === "")
-            return ""
-
-        return "https://etoro-cdn.etorostatic.com/market-avatars/" + String(instrument.instrumentId) + "/50x50.png"
     }
 
     Timer {
@@ -161,6 +155,8 @@ Page {
 
     Component.onCompleted: {
         etoroClient.loadInstrumentQuote(instrumentData)
+        etoroClient.refreshInstrumentRestrictions(instrumentData.instrumentId,
+                                                  String(instrumentData.symbol || ""))
         page.openedFromWatchlist = page.watchlistId !== ""
     }
 
@@ -179,6 +175,7 @@ Page {
 
     Component.onDestruction: {
         etoroClient.clearSelectedInstrumentQuote()
+        etoroClient.clearPriceChart()
     }
 
     SilicaFlickable {
@@ -325,7 +322,7 @@ Page {
                             Image {
                                 id: logoImage
                                 anchors.centerIn: parent
-                                source: instrumentIcon50(page.instrumentData)
+                                source: AssetUtils.icon50(page.instrumentData)
                                 width: 100
                                 height: 100
                                 fillMode: Image.PreserveAspectFit
@@ -445,6 +442,12 @@ Page {
                         }
                     }
                 }
+            }
+
+            PriceChartCard {
+                width: parent.width
+                instrumentId: Number(page.instrumentData.instrumentId || 0)
+                assetName: String(page.instrumentData.symbol || page.instrumentData.displayName || "")
             }
 
             Rectangle {

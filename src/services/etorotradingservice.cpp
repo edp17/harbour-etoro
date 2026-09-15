@@ -39,13 +39,14 @@ void EtoroTradingService::openMarketOrder(const QVariantMap &order,
             : QStringLiteral("/trading/execution/market-open-orders/%1").arg(method);
 
     QNetworkRequest req = NetworkUtils::buildAuthenticatedRequest(path, apiKey, userKey);
+    const QString requestId = QString::fromUtf8(req.rawHeader("x-request-id"));
 
     req.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
 
     const QByteArray body = QJsonDocument::fromVariant(payload).toJson(QJsonDocument::Compact);
 
     QNetworkReply *reply = m_nam->post(req, body);
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, requestId]() {
         const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const QByteArray body = reply->readAll();
         const QNetworkReply::NetworkError netError = reply->error();
@@ -69,10 +70,9 @@ void EtoroTradingService::openMarketOrder(const QVariantMap &order,
             return;
         }
 
-        if (doc.isObject())
-            emit marketOrderSubmitted(doc.object().toVariantMap());
-        else
-            emit marketOrderSubmitted(QVariantMap());
+        QVariantMap response = doc.isObject() ? doc.object().toVariantMap() : QVariantMap();
+        response.insert(QStringLiteral("_requestId"), requestId);
+        emit marketOrderSubmitted(response);
     });
 }
 
@@ -89,13 +89,15 @@ void EtoroTradingService::closeMarketPosition(const QVariantMap &position,
     payload.insert(QStringLiteral("InstrumentId"), position.value(QStringLiteral("instrumentId")).toInt());
     const QString trimmedUnits = unitsToDeduct.trimmed();
 
-    if (trimmedUnits.isEmpty())
+    if (trimmedUnits.isEmpty()) {
         payload.insert(QStringLiteral("UnitsToDeduct"), QVariant());
-    else
+    } else {
         payload.insert(QStringLiteral("UnitsToDeduct"), trimmedUnits.toDouble());
-        if (AppLog::debugEnabled())
-            qWarning() << "ETORO CLOSE POSITION PAYLOAD:"
-                       << QJsonDocument::fromVariant(payload).toJson(QJsonDocument::Compact);
+    }
+
+    if (AppLog::debugEnabled())
+        qWarning() << "ETORO CLOSE POSITION PAYLOAD:"
+                   << QJsonDocument::fromVariant(payload).toJson(QJsonDocument::Compact);
 
     if (dryRun) {
         if (AppLog::debugEnabled())
@@ -161,9 +163,10 @@ void EtoroTradingService::updatePositionProtection(const QVariantMap &position,
     const QString takeProfit = protection.value(QStringLiteral("takeProfit")).toString().trimmed();
     if (!takeProfit.isEmpty())
         payload.insert(QStringLiteral("TakeProfit"), takeProfit.toDouble());
-        if (AppLog::debugEnabled())
-            qWarning() << "ETORO UPDATE POSITION PROTECTION PAYLOAD:"
-                       << QJsonDocument::fromVariant(payload).toJson(QJsonDocument::Compact);
+
+    if (AppLog::debugEnabled())
+        qWarning() << "ETORO UPDATE POSITION PROTECTION PAYLOAD:"
+                   << QJsonDocument::fromVariant(payload).toJson(QJsonDocument::Compact);
 
     if (dryRun) {
         if (AppLog::debugEnabled())

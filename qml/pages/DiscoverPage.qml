@@ -20,12 +20,22 @@
 import QtQuick 2.0
 import Sailfish.Silica 1.0
 import "../components"
+import "../js/AssetUtils.js" as AssetUtils
 
 Page {
     id: page
 
     property int selectedTypeId: 0
     property var filteredResults: []
+    property var assetTypes: [
+        { label: qsTr("All"), typeId: 0 },
+        { label: qsTr("Stocks"), typeId: 5 },
+        { label: qsTr("Crypto"), typeId: 10 },
+        { label: qsTr("ETFs"), typeId: 6 },
+        { label: qsTr("Indices"), typeId: 4 },
+        { label: qsTr("Commodities"), typeId: 2 },
+        { label: qsTr("Currencies"), typeId: 1 }
+    ]
 
     function valueText(value, decimals) {
         if (decimals === undefined)
@@ -35,20 +45,6 @@ Page {
             return "—"
 
         return Number(value || 0).toLocaleString(Qt.locale(), "f", decimals)
-    }
-
-    function typeName(typeId) {
-        typeId = Number(typeId || 0)
-
-        switch (typeId) {
-        case 1: return qsTr("Currencies")
-        case 2: return qsTr("Commodities")
-        case 4: return qsTr("Indices")
-        case 5: return qsTr("Stocks")
-        case 6: return qsTr("ETFs")
-        case 10: return qsTr("Crypto")
-        default: return qsTr("Other")
-        }
     }
 
     function updateFilteredResults() {
@@ -107,36 +103,21 @@ Page {
             ComboBox {
                 id: typeCombo
                 width: parent.width
-                label: qsTr("Instrument type")
+                label: qsTr("Asset type")
                 currentIndex: 0
 
                 menu: ContextMenu {
-                    MenuItem { text: qsTr("All") }
-                    MenuItem { text: qsTr("Stocks") }
-                    MenuItem { text: qsTr("Crypto") }
-                    MenuItem { text: qsTr("ETFs") }
-                    MenuItem { text: qsTr("Indices") }
-                    MenuItem { text: qsTr("Commodities") }
-                    MenuItem { text: qsTr("Currencies") }
+                    Repeater {
+                        model: page.assetTypes
+                        delegate: MenuItem { text: modelData.label }
+                    }
                 }
 
                 onCurrentIndexChanged: {
-                    // ETF type id still unknown; leave it mapped to 0 for now.
-                    if (currentIndex === 0)
-                        page.selectedTypeId = 0
-                    else if (currentIndex === 1)
-                        page.selectedTypeId = 5
-                    else if (currentIndex === 2)
-                        page.selectedTypeId = 10
-                    else if (currentIndex === 3)
-                        page.selectedTypeId = 6
-                    else if (currentIndex === 4)
-                        page.selectedTypeId = 4
-                    else if (currentIndex === 5)
-                        page.selectedTypeId = 2
-                    else if (currentIndex === 6)
-                        page.selectedTypeId = 1
+                    if (currentIndex < 0 || currentIndex >= page.assetTypes.length)
+                        return
 
+                    page.selectedTypeId = Number(page.assetTypes[currentIndex].typeId || 0)
                     page.updateFilteredResults()
                 }
             }
@@ -178,7 +159,7 @@ Page {
                 width: parent.width - 2 * Theme.horizontalPageMargin
                 x: Theme.horizontalPageMargin
                 visible: etoroClient.discoverLoading
-                text: qsTr("Searching instruments…")
+                text: qsTr("Searching assets…")
                 color: Theme.secondaryColor
                 font.pixelSize: Theme.fontSizeSmall
                 wrapMode: Text.Wrap
@@ -294,7 +275,7 @@ Page {
                     Label {
                         width: parent.width
                         text: qsTr("%1 • ID %2")
-                                .arg(page.typeName(modelData.instrumentTypeId))
+                                .arg(AssetUtils.typeName(modelData.instrumentTypeId))
                                 .arg(modelData.instrumentId)
                         color: Theme.secondaryColor
                         font.pixelSize: Theme.fontSizeExtraSmall

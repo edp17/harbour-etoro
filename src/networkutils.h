@@ -13,6 +13,9 @@ public:
     static QNetworkRequest buildAuthenticatedRequest(const QString &path,
                                                      const QString &apiKey,
                                                      const QString &userKey);
+    static QNetworkRequest buildAuthenticatedV2Request(const QString &path,
+                                                       const QString &apiKey,
+                                                       const QString &userKey);
 };
 
 #endif // NETWORKUTILS_H

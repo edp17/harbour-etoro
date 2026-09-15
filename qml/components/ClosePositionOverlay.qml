@@ -471,17 +471,8 @@ Item {
             if (root.closeSubmitting && !etoroClient.busy) {
                 root.closeSubmitting = false
 
-                if (etoroClient.lastError && etoroClient.lastError.length > 0) {
-                    if (String(etoroClient.lastError).indexOf("Position close submitted") >= 0)
-                    {
-                        root.visible = false
-                        root.closeSubmitted()
-                    } else {
-                        root.closeErrorText = etoroClient.lastError
-                    }
-                } else {
-                    root.visible = false
-                }
+                if (etoroClient.lastError && etoroClient.lastError.length > 0)
+                    root.closeErrorText = etoroClient.lastError
             }
         }
     }

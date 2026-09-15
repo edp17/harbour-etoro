@@ -144,8 +144,7 @@ Item {
             if (!root.visible)
                 return
 
-            if (etoroClient.lastError !== ""
-                    && etoroClient.lastError !== "Instrument removed from watchlist.")
+            if (etoroClient.lastError !== "")
                 root.errorText = etoroClient.lastError
         }
     }

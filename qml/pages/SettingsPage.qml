@@ -764,7 +764,7 @@ Page {
 
                     Label {
                         width: parent.width
-                        text: qsTr("Fast refresh intervals are best for single-instrument pages. Multi-instrument pages may use a safer minimum interval to reduce network traffic and avoid rate limiting.")
+                        text: qsTr("Fast refresh intervals are best for single-asset pages. Pages showing several assets may use a safer minimum interval to reduce network traffic and avoid rate limiting.")
                         wrapMode: Text.Wrap
                         color: Theme.secondaryColor
                         font.pixelSize: Theme.fontSizeSmall

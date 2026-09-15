@@ -19,6 +19,7 @@
 import QtQuick 2.0
 import Sailfish.Silica 1.0
 import "../components"
+import "../js/AssetUtils.js" as AssetUtils
 
 Page {
     id: page
@@ -29,15 +30,18 @@ Page {
     property bool submitAttempted: false
 
     function restrictionValue(key) {
-        if (page.positionData && page.positionData[key] !== undefined)
+        var revision = etoroClient.instrumentRestrictionsRevision
+        var cached = etoroClient.restrictionsForInstrument(page.effectiveInstrumentId)
+        if (cached && cached[key] !== undefined && cached[key] !== null && cached[key] !== "")
+            return cached[key]
+
+        if (page.positionData && page.positionData[key] !== undefined
+                && page.positionData[key] !== null && page.positionData[key] !== "")
             return page.positionData[key]
 
-        if (page.instrumentData && page.instrumentData[key] !== undefined)
+        if (page.instrumentData && page.instrumentData[key] !== undefined
+                && page.instrumentData[key] !== null && page.instrumentData[key] !== "")
             return page.instrumentData[key]
-
-        var cached = etoroClient.restrictionsForInstrument(page.effectiveInstrumentId)
-        if (cached && cached[key] !== undefined)
-            return cached[key]
 
         return undefined
     }
@@ -51,6 +55,13 @@ Page {
 
         if (page.restrictionValue("isCurrentlyTradable") === false)
             return qsTr("This market is not currently tradable.")
+
+        if (etoroClient.restrictionLookupInstrumentId === Number(page.effectiveInstrumentId || 0)) {
+            if (etoroClient.restrictionLookupLoading)
+                return qsTr("Checking market availability…")
+            if (etoroClient.restrictionLookupError.length > 0)
+                return etoroClient.restrictionLookupError
+        }
 
         return ""
     }
@@ -83,22 +94,8 @@ Page {
     property string effectiveDisplayName: {
         var v = hasPositionData ? positionData.displayName : instrumentData.displayName
         if (v === undefined || v === null || String(v) === "")
-            return effectiveInstrumentId !== "" ? (qsTr("Instrument ") + effectiveInstrumentId) : "—"
+            return effectiveInstrumentId !== "" ? (qsTr("Asset ") + effectiveInstrumentId) : "—"
         return String(v)
-    }
-
-    function instrumentTypeName(typeId) {
-        typeId = Number(typeId || 0)
-
-        switch (typeId) {
-        case 1: return qsTr("Currencies")
-        case 2: return qsTr("Commodities")
-        case 4: return qsTr("Indices")
-        case 5: return qsTr("Stocks")
-        case 6: return qsTr("ETFs")
-        case 10: return qsTr("Crypto")
-        default: return qsTr("Other")
-        }
     }
 
     function calculatedPageTitle() {
@@ -163,14 +160,6 @@ Page {
         return Qt.formatDateTime(d, "dd/MM/yyyy hh:mm")
     }
 
-    function profitPercent() {
-        var invested = Number(positionData.invested || 0)
-        var pnl = Number(positionData.netProfit || 0)
-        if (invested === 0)
-            return 0
-        return (pnl / invested) * 100.0
-    }
-
     function netValue() {
         return Number(positionData.invested || 0) + Number(positionData.netProfit || 0)
     }
@@ -179,12 +168,6 @@ Page {
         if (value === undefined || value === null || value === "")
             return "—"
         return amountText(value, decimals)
-    }
-
-    function instrumentIcon50(instrumentId) {
-        if (instrumentId === undefined || instrumentId === null || instrumentId === "")
-            return ""
-        return "https://etoro-cdn.etorostatic.com/market-avatars/" + String(instrumentId) + "/50x50.png"
     }
 
     function liveQuote() {
@@ -207,6 +190,8 @@ Page {
     Component.onCompleted: {
         if (!hasPositionData)
             refreshQuote()
+        etoroClient.refreshInstrumentRestrictions(page.effectiveInstrumentId,
+                                                  page.effectiveSymbol)
     }
 
     Timer {
@@ -337,7 +322,7 @@ Page {
                             Image {
                                 id: logoImage
                                 anchors.centerIn: parent
-                                source: instrumentIcon50(page.effectiveInstrumentId)
+                                source: AssetUtils.icon50(page.effectiveInstrumentId)
                                 width: 100
                                 height: 100
                                 fillMode: Image.PreserveAspectFit
@@ -378,7 +363,7 @@ Page {
 
                             Label {
                                 width: parent.width
-                                text: page.instrumentTypeName(page.hasPositionData
+                                text: AssetUtils.typeName(page.hasPositionData
                                                               ? page.positionData.instrumentTypeId
                                                               : page.instrumentData.instrumentTypeId)
                                 color: Theme.secondaryColor
@@ -409,7 +394,7 @@ Page {
                     TradePriceActionRow {
                         width: parent.width
                         sideText: qsTr("Sell")
-                        rawValue: (page.liveQuote() || {}).ask
+                        rawValue: (page.liveQuote() || {}).bid
                         decimals: 4
                         tradingEnabled: etoroClient.tradingEnabled
                         actionEnabled: page.hasPositionData && !etoroClient.busy
@@ -424,7 +409,7 @@ Page {
                     TradePriceActionRow {
                         width: parent.width
                         sideText: qsTr("Buy")
-                        rawValue: (page.liveQuote() || {}).bid
+                        rawValue: (page.liveQuote() || {}).ask
                         decimals: 4
                         tradingEnabled: etoroClient.tradingEnabled
                         actionEnabled: page.buyAllowed()
@@ -487,7 +472,7 @@ Page {
 
                     Label {
                         width: parent.width
-                        text: qsTr("Order entry will be added here in the next step.")
+                        text: qsTr("Review the market and enter your order details below.")
                         color: Theme.secondaryColor
                         font.pixelSize: Theme.fontSizeSmall
                         wrapMode: Text.Wrap
@@ -568,55 +553,6 @@ Page {
                 }
             }
 
-// Temp ----
-//SectionHeader {
-//    text: qsTr("Protection test")
-//    visible: etoroClient.tradingEnabled
-//}
-//
-//TextField {
-//    id: testStopLossField
-//    width: parent.width
-//    visible: etoroClient.tradingEnabled
-//    label: qsTr("New Stop Loss")
-//    placeholderText: qsTr("Optional")
-//    inputMethodHints: Qt.ImhFormattedNumbersOnly
-//}
-//
-//TextField {
-//    id: testTakeProfitField
-//    width: parent.width
-//    visible: etoroClient.tradingEnabled
-//    label: qsTr("New Take Profit")
-//    placeholderText: qsTr("Optional")
-//    inputMethodHints: Qt.ImhFormattedNumbersOnly
-//}
-//
-//Button {
-//    width: parent.width
-//    visible: etoroClient.tradingEnabled
-//    enabled: !etoroClient.busy
-//    text: etoroClient.busy ? qsTr("Submitting…") : qsTr("Test SL/TP update")
-//
-//    onClicked: {
-//        etoroClient.updatePositionProtection(page.positionData, {
-//            "stopLoss": testStopLossField.text,
-//            "takeProfit": testTakeProfitField.text
-//        })
-//        etoroClient.registerUserActivity()
-//    }
-//}
-//
-//Label {
-//    width: parent.width
-//    visible: etoroClient.tradingEnabled && etoroClient.lastError !== ""
-//    text: etoroClient.lastError
-//    color: etoroClient.lastError.indexOf("updated") >= 0 ? Theme.highlightColor : Theme.errorColor
-//    font.pixelSize: Theme.fontSizeSmall
-//    wrapMode: Text.Wrap
-//}
-// Temp ----
-
             Rectangle {
                 x: Theme.horizontalPageMargin
                 width: parent.width - 2 * x
@@ -635,7 +571,7 @@ Page {
 
                     Label {
                         width: parent.width
-                        text: page.hasPositionData ? qsTr("Details") : qsTr("Instrument")
+                        text: page.hasPositionData ? qsTr("Details") : qsTr("Asset")
                         color: Theme.highlightColor
                         font.pixelSize: Theme.fontSizeSmall
                     }
@@ -887,7 +823,7 @@ Page {
         instrumentId: Number(page.effectiveInstrumentId || 0)
         symbol: page.effectiveSymbol || ""
         displayName: page.effectiveDisplayName || ""
-        unitPrice: (page.liveQuote() || {}).bid
+        unitPrice: (page.liveQuote() || {}).ask
 
         onOrderSubmitted: {
             purchaseSubmittedOverlay.open()

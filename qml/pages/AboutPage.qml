@@ -61,7 +61,7 @@ Page {
 
             Label {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: qsTr("Version ") + (Qt.application.version ? Qt.application.version : "0.6")
+                text: qsTr("Version ") + (Qt.application.version ? Qt.application.version : "0.7.1")
                 font.pixelSize: Theme.fontSizeMedium
                 color: Theme.secondaryColor
             }
@@ -91,7 +91,7 @@ Page {
 
                     Label {
                         width: parent.width
-                        text: qsTr("This build provides portfolio, grouped positions, watchlists, Discover search, live market quotes, trade history, statistics and optional trading features.")
+                        text: qsTr("This build provides portfolio, grouped positions, watchlists, Discover search, live market quotes, historical price charts, trade history, statistics, order-status tracking and optional trading features.")
                         color: Theme.secondaryColor
                         font.pixelSize: Theme.fontSizeSmall
                         wrapMode: Text.Wrap

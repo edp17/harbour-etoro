@@ -18,6 +18,7 @@
 */
 import QtQuick 2.0
 import Sailfish.Silica 1.0
+import "../js/AssetUtils.js" as AssetUtils
 import "../components"
 
 Page {
@@ -83,15 +84,6 @@ Page {
 
         if (watchlistCombo.currentIndex !== idx)
             watchlistCombo.currentIndex = idx
-    }
-
-    function instrumentIcon50(instrumentId) {
-        if (instrumentId === undefined || instrumentId === null || instrumentId === "")
-            return ""
-
-        return "https://etoro-cdn.etorostatic.com/market-avatars/"
-                + String(instrumentId)
-                + "/50x50.png"
     }
 
     function applyFilter() {
@@ -380,7 +372,7 @@ Page {
                         width: parent.width
                         visible: !etoroClient.watchlistItemsLoading && page.filteredItems.length === 0
                         text: page.filterText.trim().length > 0
-                              ? qsTr("No asset match the current filter.")
+                              ? qsTr("No assets match the current filter.")
                               : qsTr("No assets in this watchlist yet. Select another watchlist or add assets from Discover.")
                         color: Theme.secondaryColor
                         font.pixelSize: Theme.fontSizeSmall
@@ -479,7 +471,7 @@ Page {
 
                             Image {
                                 id: logoImage
-                                source: instrumentIcon50(modelData.instrumentId)
+                                source: AssetUtils.icon50(modelData.instrumentId)
                                 width: 50
                                 height: 50
                                 fillMode: Image.PreserveAspectFit

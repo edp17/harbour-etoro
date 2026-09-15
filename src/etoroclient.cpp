@@ -1,5 +1,6 @@
 #include "etoroclient.h"
 #include "applog.h"
+#include "settingsutils.h"
 #include <QDebug>
 #include <QSet>
 #include <algorithm>
@@ -14,6 +15,7 @@ static const char *KEY_AUTO_LOCK_MINUTES = "security/autoLockMinutes";
 static const char *KEY_PORTFOLIO_SHOW_FILTER = "ui/portfolioShowFilter";
 static const char *KEY_PORTFOLIO_SHOW_SORT = "ui/portfolioShowSort";
 static const char *KEY_PORTFOLIO_SORT_MODE = "ui/portfolioSortMode";
+static const char *KEY_PORTFOLIO_SORT_DESCENDING = "ui/portfolioSortDescending";
 static const char *KEY_PORTFOLIO_VIEW_MODE = "ui/portfolioViewMode";
 static const char *KEY_PORTFOLIO_FILTER_TEXT = "ui/portfolioFilterText";
 static const char *KEY_HISTORY_FILTER_TEXT = "ui/historyFilterText";
@@ -34,13 +36,25 @@ static const char *KEY_HISTORY_CUSTOM_TO_DATE = "history/customToDate";
 EtoroClient::EtoroClient(QObject *parent)
     : QObject(parent)
     , m_tokenStore(this)
-    , m_settings("harbour-etoro", "harbour-etoro")
+    , m_settings(SettingsUtils::settingsFilePath(), QSettings::NativeFormat)
+    , m_messageController(this)
+    , m_orderStatusController(&m_nam, this)
+    , m_priceChartController(&m_nam, this)
     , m_portfolioService(&m_nam, this)
     , m_marketService(&m_nam, this)
     , m_tradingService(&m_nam, this)
     , m_watchlistService(&m_nam, this)
     , m_historyService(&m_nam, this)
 {
+    connect(&m_messageController, &UiMessageController::errorMessageChanged,
+            this, &EtoroClient::lastErrorChanged);
+    connect(&m_messageController, &UiMessageController::successMessageChanged,
+            this, &EtoroClient::successMessageChanged);
+    connect(&m_orderStatusController, &OrderStatusController::changed,
+            this, &EtoroClient::orderStatusChanged);
+    connect(&m_priceChartController, &PriceChartController::changed,
+            this, &EtoroClient::priceChartChanged);
+
     m_locked = m_tokenStore.pinEnabled();
 
     m_debugLoggingEnabled = m_settings.value(KEY_DEBUG_LOGGING_ENABLED, false).toBool();
@@ -252,6 +266,32 @@ EtoroClient::EtoroClient(QObject *parent)
         setLastError(QString());
     });
 
+    connect(&m_marketService, &EtoroMarketService::instrumentRestrictionsReady,
+            this, [this](int instrumentId, const QVariantMap &restrictions) {
+        if (!restrictions.isEmpty()) {
+            const QString key = QString::number(instrumentId);
+            if (m_instrumentRestrictionsById.value(key).toMap() != restrictions) {
+                m_instrumentRestrictionsById.insert(key, restrictions);
+                ++m_instrumentRestrictionsRevision;
+            }
+        }
+
+        if (instrumentId == m_restrictionLookupInstrumentId) {
+            m_restrictionLookupLoading = false;
+            m_restrictionLookupError.clear();
+        }
+        emit instrumentRestrictionsChanged();
+    });
+
+    connect(&m_marketService, &EtoroMarketService::instrumentRestrictionsFailed,
+            this, [this](int instrumentId, const QString &) {
+        if (instrumentId != m_restrictionLookupInstrumentId)
+            return;
+        m_restrictionLookupLoading = false;
+        m_restrictionLookupError = tr("Market availability could not be confirmed.");
+        emit instrumentRestrictionsChanged();
+    });
+
     connect(&m_marketService, &EtoroMarketService::requestFailed, this, [this](const QString &errorString, int httpStatus, const QByteArray &body) {
         if (m_debugLoggingEnabled)
         {
@@ -381,7 +421,7 @@ EtoroClient::EtoroClient(QObject *parent)
 
         setBusy(false);
         setOnline(true);
-        setLastError(QStringLiteral("Asset added to watchlist."));
+        setSuccessMessage(tr("Asset added to watchlist."));
         emit watchlistItemAdded();
 
         refreshWatchlists();
@@ -394,7 +434,7 @@ EtoroClient::EtoroClient(QObject *parent)
             this, [this](const QString &watchlistId, const QString &name) {
         setBusy(false);
         setOnline(true);
-        setLastError(QStringLiteral("Watchlist created."));
+        setSuccessMessage(tr("Watchlist created."));
         emit watchlistCreated(watchlistId, name);
         refreshWatchlists();
     });
@@ -403,7 +443,7 @@ EtoroClient::EtoroClient(QObject *parent)
             this, [this](const QString &watchlistId, const QString &name) {
         setBusy(false);
         setOnline(true);
-        setLastError(QStringLiteral("Watchlist renamed."));
+        setSuccessMessage(tr("Watchlist renamed."));
         emit watchlistRenamed(watchlistId, name);
         refreshWatchlists();
     });
@@ -412,7 +452,7 @@ EtoroClient::EtoroClient(QObject *parent)
             this, [this](const QString &watchlistId) {
         setBusy(false);
         setOnline(true);
-        setLastError(QStringLiteral("Watchlist deleted."));
+        setSuccessMessage(tr("Watchlist deleted."));
         emit watchlistDeleted(watchlistId);
         refreshWatchlists();
     });
@@ -423,7 +463,7 @@ EtoroClient::EtoroClient(QObject *parent)
 
         setBusy(false);
         setOnline(true);
-        setLastError(QStringLiteral("Asset removed from watchlist."));
+        setSuccessMessage(tr("Asset removed from watchlist."));
         emit watchlistItemRemoved();
 
         m_instrumentWatchlistMatches.clear();
@@ -503,6 +543,8 @@ EtoroClient::EtoroClient(QObject *parent)
         setBusy(false);
         setOnline(true);
         setLastError(QString());
+        setSuccessMessage(tr("Order prepared in preview mode."));
+        m_tradingOperation = TradingNone;
     });
 
     connect(&m_tradingService, &EtoroTradingService::marketOrderSubmitted,
@@ -511,7 +553,13 @@ EtoroClient::EtoroClient(QObject *parent)
             qWarning() << "Market order submitted:" << response;
         setBusy(false);
         setOnline(true);
-        setLastError(QStringLiteral("Market order submitted."));
+        setSuccessMessage(tr("Market order submitted."));
+        m_tradingOperation = TradingNone;
+        m_orderStatusController.trackSubmittedOrder(response,
+                                                     m_cachedApiKey,
+                                                     m_cachedUserKey,
+                                                     demoMode());
+        emit marketOrderSubmitted();
         QTimer::singleShot(2500, this, [this]() {
             if (!m_locked && hasCredentials() && !m_busy)
                 refreshPortfolio();
@@ -528,10 +576,21 @@ EtoroClient::EtoroClient(QObject *parent)
 
         setBusy(false);
 
-        if (httpStatus == 401 || httpStatus == 403)
+        const TradingOperation failedOperation = m_tradingOperation;
+        m_tradingOperation = TradingNone;
+
+        if (httpStatus == 401 || httpStatus == 403) {
             setLastError(QStringLiteral("Trading request authentication failed."));
-        else
+        } else if (failedOperation == TradingClose) {
+            setLastError(tr("Could not submit the position close."));
+        } else if (failedOperation == TradingProtection) {
+            setLastError(tr("Could not update Stop Loss or Take Profit."));
+        } else {
             setLastError(QStringLiteral("Failed to submit market order."));
+        }
+
+        if (failedOperation == TradingOpen)
+            emit marketOrderSubmissionFailed(lastError());
     });
 
     // Close - Sell (full) ----
@@ -541,6 +600,7 @@ EtoroClient::EtoroClient(QObject *parent)
         setBusy(false);
         setOnline(true);
         setLastError(QString());
+        m_tradingOperation = TradingNone;
     });
 
     connect(&m_tradingService, &EtoroTradingService::closePositionSubmitted, this, [this](const QVariantMap &response) {
@@ -548,7 +608,8 @@ EtoroClient::EtoroClient(QObject *parent)
             qWarning() << "Close position submitted:" << response;
         setBusy(false);
         setOnline(true);
-        setLastError(QStringLiteral("Position close submitted."));
+        setSuccessMessage(tr("Position close submitted."));
+        m_tradingOperation = TradingNone;
         emit positionCloseSubmitted();
 
         QTimer::singleShot(2500, this, [this]() {
@@ -564,6 +625,7 @@ EtoroClient::EtoroClient(QObject *parent)
         setBusy(false);
         setOnline(true);
         setLastError(QString());
+        m_tradingOperation = TradingNone;
     });
 
     // Update SL/TP ----
@@ -572,7 +634,8 @@ EtoroClient::EtoroClient(QObject *parent)
             qWarning() << "Position protection updated:" << response;
         setBusy(false);
         setOnline(true);
-        setLastError(QStringLiteral("Position protection updated."));
+        setSuccessMessage(tr("Position protection updated."));
+        m_tradingOperation = TradingNone;
 
         QTimer::singleShot(1500, this, [this]() {
             if (!m_locked && hasCredentials() && !m_busy)
@@ -593,8 +656,46 @@ QVariantMap EtoroClient::restrictionsForInstrument(const QVariant &instrumentId)
     return m_instrumentRestrictionsById.value(QString::number(id)).toMap();
 }
 
+int EtoroClient::instrumentRestrictionsRevision() const
+{
+    return m_instrumentRestrictionsRevision;
+}
+
+int EtoroClient::restrictionLookupInstrumentId() const
+{
+    return m_restrictionLookupInstrumentId;
+}
+
+bool EtoroClient::restrictionLookupLoading() const
+{
+    return m_restrictionLookupLoading;
+}
+
+QString EtoroClient::restrictionLookupError() const
+{
+    return m_restrictionLookupError;
+}
+
+void EtoroClient::refreshInstrumentRestrictions(const QVariant &instrumentId,
+                                                const QString &symbol)
+{
+    registerUserActivity();
+    const int id = instrumentId.toInt();
+    if (id <= 0 || m_locked || !hasCredentials())
+        return;
+
+    m_restrictionLookupInstrumentId = id;
+    m_restrictionLookupLoading = true;
+    m_restrictionLookupError.clear();
+    emit instrumentRestrictionsChanged();
+
+    m_marketService.fetchInstrumentRestrictions(id, symbol,
+                                                m_cachedApiKey, m_cachedUserKey);
+}
+
 void EtoroClient::rememberInstrumentRestrictions(const QVariantList &items)
 {
+    bool changed = false;
     for (const QVariant &v : items) {
         const QVariantMap item = v.toMap();
         const int instrumentId = item.value(QStringLiteral("instrumentId")).toInt();
@@ -613,8 +714,18 @@ void EtoroClient::rememberInstrumentRestrictions(const QVariantList &items)
         if (item.contains(QStringLiteral("tradingDisabled")))
             restrictions.insert(QStringLiteral("tradingDisabled"), item.value(QStringLiteral("tradingDisabled")));
 
-        if (!restrictions.isEmpty())
-            m_instrumentRestrictionsById.insert(QString::number(instrumentId), restrictions);
+        if (!restrictions.isEmpty()) {
+            const QString key = QString::number(instrumentId);
+            if (m_instrumentRestrictionsById.value(key).toMap() != restrictions) {
+                m_instrumentRestrictionsById.insert(key, restrictions);
+                changed = true;
+            }
+        }
+    }
+
+    if (changed) {
+        ++m_instrumentRestrictionsRevision;
+        emit instrumentRestrictionsChanged();
     }
 }
 
@@ -870,13 +981,12 @@ void EtoroClient::reloadCachedCredentials()
 
 void EtoroClient::clearLastError()
 {
-    if (m_lastError.isEmpty()) {
-        emit lastErrorChanged();
-        return;
-    }
+    m_messageController.clearErrorMessage();
+}
 
-    m_lastError.clear();
-    emit lastErrorChanged();
+void EtoroClient::clearSuccessMessage()
+{
+    m_messageController.clearSuccessMessage();
 }
 
 void EtoroClient::clearCachedCredentials()
@@ -987,7 +1097,14 @@ bool EtoroClient::portfolioShowSort() const
 
 QString EtoroClient::portfolioSortMode() const
 {
-    return m_settings.value(KEY_PORTFOLIO_SORT_MODE, QStringLiteral("invested")).toString();
+    const QString stored = m_settings.value(KEY_PORTFOLIO_SORT_MODE,
+                                            QStringLiteral("invested")).toString();
+    return stored == QStringLiteral("profit") ? QStringLiteral("pl") : stored;
+}
+
+bool EtoroClient::portfolioSortDescending() const
+{
+    return m_settings.value(KEY_PORTFOLIO_SORT_DESCENDING, true).toBool();
 }
 
 QString EtoroClient::portfolioViewMode() const
@@ -1049,7 +1166,13 @@ void EtoroClient::setDemoMode(bool enabled)
     emit credentialsChanged();
 
     emit accountModeChanged();
-    emit credentialsChanged();
+
+    m_orderStatusController.clear();
+    m_priceChartController.clear();
+    m_restrictionLookupInstrumentId = 0;
+    m_restrictionLookupLoading = false;
+    m_restrictionLookupError.clear();
+    emit instrumentRestrictionsChanged();
 
     m_portfolioSummary.clear();
     m_openPositions.clear();
@@ -1124,14 +1247,29 @@ void EtoroClient::setPortfolioShowSort(bool value)
 
 void EtoroClient::setPortfolioSortMode(const QString &value)
 {
-    const QString normalized = (value == QStringLiteral("profit") || value == QStringLiteral("name"))
-            ? value
-            : QStringLiteral("invested");
+    const QStringList validModes = {
+        QStringLiteral("invested"),
+        QStringLiteral("pl_percent"),
+        QStringLiteral("pl"),
+        QStringLiteral("net"),
+        QStringLiteral("name")
+    };
+    const QString normalized = validModes.contains(value) ? value : QStringLiteral("invested");
 
     if (portfolioSortMode() == normalized)
         return;
 
     m_settings.setValue(KEY_PORTFOLIO_SORT_MODE, normalized);
+    m_settings.sync();
+    emit portfolioUiChanged();
+}
+
+void EtoroClient::setPortfolioSortDescending(bool value)
+{
+    if (portfolioSortDescending() == value)
+        return;
+
+    m_settings.setValue(KEY_PORTFOLIO_SORT_DESCENDING, value);
     m_settings.sync();
     emit portfolioUiChanged();
 }
@@ -1188,6 +1326,82 @@ QVariantMap EtoroClient::selectedInstrumentQuote() const
 bool EtoroClient::selectedInstrumentQuoteLoading() const
 {
     return m_selectedInstrumentQuoteLoading;
+}
+
+QVariantMap EtoroClient::lastOrderStatus() const
+{
+    return m_orderStatusController.orderStatus();
+}
+
+bool EtoroClient::orderStatusLoading() const
+{
+    return m_orderStatusController.loading();
+}
+
+QString EtoroClient::orderStatusError() const
+{
+    return m_orderStatusController.errorMessage();
+}
+
+void EtoroClient::refreshLastOrderStatus()
+{
+    registerUserActivity();
+    m_orderStatusController.refresh();
+}
+
+void EtoroClient::clearLastOrderStatus()
+{
+    m_orderStatusController.clear();
+}
+
+QVariantList EtoroClient::priceChartCandles() const
+{
+    return m_priceChartController.candles();
+}
+
+bool EtoroClient::priceChartLoading() const
+{
+    return m_priceChartController.loading();
+}
+
+QString EtoroClient::priceChartError() const
+{
+    return m_priceChartController.errorMessage();
+}
+
+QString EtoroClient::priceChartInterval() const
+{
+    return m_priceChartController.interval();
+}
+
+int EtoroClient::priceChartInstrumentId() const
+{
+    return m_priceChartController.instrumentId();
+}
+
+void EtoroClient::loadPriceChart(const QVariant &instrumentId,
+                                 const QString &interval,
+                                 int candleCount)
+{
+    registerUserActivity();
+
+    if (m_locked) {
+        setLastError(tr("Unlock the app first"));
+        return;
+    }
+
+    if (!hasCredentials()) {
+        setLastError(tr("Enter API credentials first"));
+        return;
+    }
+
+    m_priceChartController.load(instrumentId.toInt(), interval, candleCount,
+                                m_cachedApiKey, m_cachedUserKey);
+}
+
+void EtoroClient::clearPriceChart()
+{
+    m_priceChartController.clear();
 }
 
 bool EtoroClient::historyLoading() const
@@ -1270,7 +1484,12 @@ bool EtoroClient::online() const
 
 QString EtoroClient::lastError() const
 {
-    return m_lastError;
+    return m_messageController.errorMessage();
+}
+
+QString EtoroClient::successMessage() const
+{
+    return m_messageController.successMessage();
 }
 
 QVariantMap EtoroClient::portfolioSummary() const
@@ -1281,11 +1500,6 @@ QVariantMap EtoroClient::portfolioSummary() const
 QVariantList EtoroClient::openPositions() const
 {
     return m_openPositions;
-}
-
-static bool isRateLimitedStatus(int httpStatus)
-{
-    return httpStatus == 429;
 }
 
 bool EtoroClient::addInstrumentToWatchlist(const QString &watchlistId, const QVariantMap &instrument)
@@ -1417,7 +1631,7 @@ bool EtoroClient::removeInstrumentFromWatchlist(const QString &watchlistId, cons
     }
 
     if (instrument.value(QStringLiteral("instrumentId")).toInt() <= 0) {
-        setLastError(tr("Missing instrument ID"));
+        setLastError(tr("Missing asset details."));
         return false;
     }
 
@@ -2047,7 +2261,7 @@ void EtoroClient::clearCredentials()
 
     setLocked(false);
     stopInactivityTimer();
-    setLastError(QStringLiteral("Stored credentials cleared."));
+    setSuccessMessage(tr("Stored credentials cleared."));
 }
 
 QString EtoroClient::apiKeyPreview() const
@@ -2271,6 +2485,12 @@ void EtoroClient::setLocked(bool value)
 
     if (m_locked) {
         stopInactivityTimer();
+        m_orderStatusController.clear();
+        m_priceChartController.clear();
+        m_restrictionLookupInstrumentId = 0;
+        m_restrictionLookupLoading = false;
+        m_restrictionLookupError.clear();
+        emit instrumentRestrictionsChanged();
     } else {
         resetInactivityTimer();
 
@@ -2306,10 +2526,12 @@ void EtoroClient::clearPinSettingsError()
 
 void EtoroClient::setLastError(const QString &value)
 {
-    if (m_lastError == value)
-        return;
-    m_lastError = value;
-    emit lastErrorChanged();
+    m_messageController.setErrorMessage(value);
+}
+
+void EtoroClient::setSuccessMessage(const QString &value)
+{
+    m_messageController.setSuccessMessage(value);
 }
 
 void EtoroClient::enrichPendingTradeHistory(const QVariantMap &metadataById)
@@ -2496,7 +2718,7 @@ bool EtoroClient::prepareMarketOrder(const QVariantMap &order)
     const int leverage = order.value("leverage").toInt();
 
     if (instrumentId <= 0) {
-        setLastError(tr("Missing instrument"));
+        setLastError(tr("Missing asset details."));
         return false;
     }
 
@@ -2515,17 +2737,20 @@ bool EtoroClient::prepareMarketOrder(const QVariantMap &order)
         return false;
     }
 
-    qDebug() << "Prepared market order"
-             << "instrumentId=" << instrumentId
-             << "byAmount=" << byAmount
-             << "amount=" << amount
-             << "units=" << units
-             << "leverage=" << leverage
-             << "stopLoss=" << order.value("stopLoss").toString()
-             << "takeProfit=" << order.value("takeProfit").toString();
+    if (m_debugLoggingEnabled) {
+        qDebug() << "Prepared market order"
+                 << "instrumentId=" << instrumentId
+                 << "byAmount=" << byAmount
+                 << "amount=" << amount
+                 << "units=" << units
+                 << "leverage=" << leverage
+                 << "stopLoss=" << order.value("stopLoss").toString()
+                 << "takeProfit=" << order.value("takeProfit").toString();
+    }
 
     const bool dryRun = !liveOrderSubmissionEnabled();
 
+    m_tradingOperation = TradingOpen;
     setBusy(true);
     m_tradingService.openMarketOrder(
                 order,
@@ -2558,7 +2783,7 @@ bool EtoroClient::closePosition(const QVariantMap &position, const QString &unit
     }
 
     if (instrumentId <= 0) {
-        setLastError(tr("Missing instrument"));
+        setLastError(tr("Missing asset details."));
         return false;
     }
 
@@ -2580,12 +2805,15 @@ bool EtoroClient::closePosition(const QVariantMap &position, const QString &unit
         }
     }
 
-    qDebug() << "Prepared close position"
-             << "positionId=" << positionId
-             << "instrumentId=" << instrumentId;
+    if (m_debugLoggingEnabled) {
+        qDebug() << "Prepared close position"
+                 << "positionId=" << positionId
+                 << "instrumentId=" << instrumentId;
+    }
 
     const bool dryRun = !liveOrderSubmissionEnabled();
 
+    m_tradingOperation = TradingClose;
     setBusy(true);
     m_tradingService.closeMarketPosition(position,
                                          trimmedUnits,
@@ -2622,13 +2850,16 @@ bool EtoroClient::updatePositionProtection(const QVariantMap &position, const QV
         return false;
     }
 
-    qDebug() << "Prepared update position protection"
-             << "positionId=" << positionId
-             << "stopLoss=" << stopLoss
-             << "takeProfit=" << takeProfit;
+    if (m_debugLoggingEnabled) {
+        qDebug() << "Prepared update position protection"
+                 << "positionId=" << positionId
+                 << "stopLoss=" << stopLoss
+                 << "takeProfit=" << takeProfit;
+    }
 
     const bool dryRun = !liveOrderSubmissionEnabled();
 
+    m_tradingOperation = TradingProtection;
     setBusy(true);
     m_tradingService.updatePositionProtection(position,
                                               protection,

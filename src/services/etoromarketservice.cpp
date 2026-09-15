@@ -9,6 +9,7 @@
 #include <QUrlQuery>
 #include <QSet>
 #include <QDebug>
+#include <QStringList>
 
 EtoroMarketService::EtoroMarketService(QNetworkAccessManager *nam, QObject *parent)
     : QObject(parent)
@@ -87,10 +88,14 @@ void EtoroMarketService::fetchInstrumentMetadata(const QList<int> &instrumentIds
             item.insert("instrumentTypeId", row.value("instrumentTypeID"));
             item.insert("exchangeId", row.value("exchangeID"));
             item.insert("priceSource", row.value("priceSource").toString());
-            item.insert(QStringLiteral("isBuyEnabled"), row.value(QStringLiteral("isBuyEnabled")));
-            item.insert(QStringLiteral("isCurrentlyTradable"), row.value(QStringLiteral("isCurrentlyTradable")));
-            item.insert(QStringLiteral("isExchangeOpen"), row.value(QStringLiteral("isExchangeOpen")));
-            item.insert(QStringLiteral("tradingDisabled"), row.value(QStringLiteral("tradingDisabled")));
+            if (row.contains(QStringLiteral("isBuyEnabled")))
+                item.insert(QStringLiteral("isBuyEnabled"), row.value(QStringLiteral("isBuyEnabled")));
+            if (row.contains(QStringLiteral("isCurrentlyTradable")))
+                item.insert(QStringLiteral("isCurrentlyTradable"), row.value(QStringLiteral("isCurrentlyTradable")));
+            if (row.contains(QStringLiteral("isExchangeOpen")))
+                item.insert(QStringLiteral("isExchangeOpen"), row.value(QStringLiteral("isExchangeOpen")));
+            if (row.contains(QStringLiteral("tradingDisabled")))
+                item.insert(QStringLiteral("tradingDisabled"), row.value(QStringLiteral("tradingDisabled")));
 
             metadataById.insert(id, item);
         }
@@ -276,10 +281,14 @@ static QVariantList parseSearchResults(const QJsonDocument &doc)
         item.insert(QStringLiteral("instrumentTypeId"), typeId);
         item.insert(QStringLiteral("exchangeId"), row.value(QStringLiteral("exchangeID")));
         item.insert(QStringLiteral("priceSource"), row.value(QStringLiteral("priceSource")));
-        item.insert(QStringLiteral("isBuyEnabled"), row.value(QStringLiteral("isBuyEnabled")));
-        item.insert(QStringLiteral("isCurrentlyTradable"), row.value(QStringLiteral("isCurrentlyTradable")));
-        item.insert(QStringLiteral("isExchangeOpen"), row.value(QStringLiteral("isExchangeOpen")));
-        item.insert(QStringLiteral("tradingDisabled"), row.value(QStringLiteral("tradingDisabled")));
+        if (row.contains(QStringLiteral("isBuyEnabled")))
+            item.insert(QStringLiteral("isBuyEnabled"), row.value(QStringLiteral("isBuyEnabled")));
+        if (row.contains(QStringLiteral("isCurrentlyTradable")))
+            item.insert(QStringLiteral("isCurrentlyTradable"), row.value(QStringLiteral("isCurrentlyTradable")));
+        if (row.contains(QStringLiteral("isExchangeOpen")))
+            item.insert(QStringLiteral("isExchangeOpen"), row.value(QStringLiteral("isExchangeOpen")));
+        if (row.contains(QStringLiteral("tradingDisabled")))
+            item.insert(QStringLiteral("tradingDisabled"), row.value(QStringLiteral("tradingDisabled")));
 
         QString logo = row.value(QStringLiteral("logo50x50")).toString();
         if (logo.isEmpty())
@@ -403,5 +412,77 @@ void EtoroMarketService::searchInstrumentsByName(const QString &queryText,
         }
 
         emit instrumentSearchReady(parseSearchResults(doc));
+    });
+}
+
+void EtoroMarketService::fetchInstrumentRestrictions(int instrumentId,
+                                                     const QString &symbol,
+                                                     const QString &apiKey,
+                                                     const QString &userKey)
+{
+    if (instrumentId <= 0) {
+        emit instrumentRestrictionsReady(instrumentId, QVariantMap());
+        return;
+    }
+
+    QNetworkRequest req = NetworkUtils::buildAuthenticatedRequest(
+                QStringLiteral("/market-data/search"), apiKey, userKey);
+
+    QUrl url = req.url();
+    QUrlQuery query(url);
+    if (!symbol.trimmed().isEmpty())
+        query.addQueryItem(QStringLiteral("internalSymbolFull"), symbol.trimmed().toUpper());
+    else
+        query.addQueryItem(QStringLiteral("internalInstrumentId"), QString::number(instrumentId));
+    url.setQuery(query);
+    req.setUrl(url);
+
+    QNetworkReply *reply = m_nam->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, instrumentId]() {
+        const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray body = reply->readAll();
+        const QNetworkReply::NetworkError netError = reply->error();
+        const QString errorString = reply->errorString();
+        reply->deleteLater();
+
+        if (AppLog::debugEnabled()) {
+            qWarning() << "ETORO RESTRICTION LOOKUP STATUS:" << httpStatus;
+            qWarning() << "ETORO RESTRICTION LOOKUP BODY:" << body;
+        }
+
+        if (netError != QNetworkReply::NoError) {
+            emit instrumentRestrictionsFailed(instrumentId, errorString);
+            return;
+        }
+
+        QJsonParseError parseError{};
+        const QJsonDocument document = QJsonDocument::fromJson(body, &parseError);
+        if (parseError.error != QJsonParseError::NoError) {
+            emit instrumentRestrictionsFailed(instrumentId,
+                                              QStringLiteral("Invalid restriction lookup response"));
+            return;
+        }
+
+        const QVariantList results = parseSearchResults(document);
+        QVariantMap restrictions;
+        for (const QVariant &resultValue : results) {
+            const QVariantMap result = resultValue.toMap();
+            if (result.value(QStringLiteral("instrumentId")).toInt() != instrumentId)
+                continue;
+
+            const QStringList keys = {
+                QStringLiteral("isBuyEnabled"),
+                QStringLiteral("isCurrentlyTradable"),
+                QStringLiteral("isExchangeOpen"),
+                QStringLiteral("tradingDisabled")
+            };
+            for (const QString &key : keys) {
+                if (result.contains(key) && result.value(key).isValid())
+                    restrictions.insert(key, result.value(key));
+            }
+            break;
+        }
+
+        emit instrumentRestrictionsReady(instrumentId, restrictions);
     });
 }

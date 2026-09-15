@@ -8,4 +8,6 @@ Comment=Sailfish OS client for eToro portfolio, watchlists and trading
 
 
 [X-Sailjail]
-Sandboxing=Disabled
+OrganizationName=harbour-etoro
+ApplicationName=harbour-etoro
+Permissions=Internet;Secrets

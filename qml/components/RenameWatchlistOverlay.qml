@@ -175,10 +175,8 @@ Item {
             if (!root.visible)
                 return
 
-            if (etoroClient.lastError !== ""
-                    && etoroClient.lastError !== "Watchlist renamed.") {
+            if (etoroClient.lastError !== "")
                 root.errorText = etoroClient.lastError
-            }
         }
     }
 }

@@ -30,3 +30,12 @@ QNetworkRequest NetworkUtils::buildAuthenticatedRequest(const QString &path,
 
     return req;
 }
+
+QNetworkRequest NetworkUtils::buildAuthenticatedV2Request(const QString &path,
+                                                          const QString &apiKey,
+                                                          const QString &userKey)
+{
+    QNetworkRequest request = buildAuthenticatedRequest(path, apiKey, userKey);
+    request.setUrl(QUrl(QStringLiteral("https://public-api.etoro.com/api/v2") + path));
+    return request;
+}

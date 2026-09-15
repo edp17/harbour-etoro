@@ -14,6 +14,9 @@
 #include "services/etorotradingservice.h"
 #include "services/etorowatchlistservice.h"
 #include "services/etorohistoryservice.h"
+#include "controllers/uimessagecontroller.h"
+#include "controllers/orderstatuscontroller.h"
+#include "controllers/pricechartcontroller.h"
 
 class EtoroClient : public QObject
 {
@@ -23,6 +26,7 @@ class EtoroClient : public QObject
     Q_PROPERTY(bool locked READ locked NOTIFY lockedChanged)
     Q_PROPERTY(bool online READ online NOTIFY onlineChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY lastErrorChanged)
+    Q_PROPERTY(QString successMessage READ successMessage NOTIFY successMessageChanged)
     Q_PROPERTY(QString pinSettingsError READ pinSettingsError NOTIFY pinSettingsErrorChanged)
     Q_PROPERTY(QVariantMap portfolioSummary READ portfolioSummary NOTIFY portfolioSummaryChanged)
     Q_PROPERTY(QVariantList openPositions READ openPositions NOTIFY openPositionsChanged)
@@ -51,6 +55,7 @@ class EtoroClient : public QObject
     Q_PROPERTY(bool portfolioShowFilter READ portfolioShowFilter WRITE setPortfolioShowFilter NOTIFY portfolioUiChanged)
     Q_PROPERTY(bool portfolioShowSort READ portfolioShowSort WRITE setPortfolioShowSort NOTIFY portfolioUiChanged)
     Q_PROPERTY(QString portfolioSortMode READ portfolioSortMode WRITE setPortfolioSortMode NOTIFY portfolioUiChanged)
+    Q_PROPERTY(bool portfolioSortDescending READ portfolioSortDescending WRITE setPortfolioSortDescending NOTIFY portfolioUiChanged)
     Q_PROPERTY(QString portfolioViewMode READ portfolioViewMode WRITE setPortfolioViewMode NOTIFY portfolioUiChanged)
     Q_PROPERTY(QString portfolioFilterText READ portfolioFilterText WRITE setPortfolioFilterText NOTIFY portfolioUiChanged)
 
@@ -84,11 +89,6 @@ class EtoroClient : public QObject
     Q_PROPERTY(bool demoMode READ demoMode WRITE setDemoMode NOTIFY accountModeChanged)
     Q_PROPERTY(QString accountModeLabel READ accountModeLabel NOTIFY accountModeChanged)
 
-    Q_PROPERTY(QString realUserKey READ realUserKey NOTIFY credentialsChanged)
-    Q_PROPERTY(QString demoUserKey READ demoUserKey NOTIFY credentialsChanged)
-    Q_PROPERTY(bool hasRealCredentials READ hasRealCredentials NOTIFY credentialsChanged)
-    Q_PROPERTY(bool hasDemoCredentials READ hasDemoCredentials NOTIFY credentialsChanged)
-
     Q_PROPERTY(QVariantList discoverResults READ discoverResults NOTIFY discoverResultsChanged)
     Q_PROPERTY(bool discoverLoading READ discoverLoading NOTIFY discoverResultsChanged)
 
@@ -103,6 +103,18 @@ class EtoroClient : public QObject
     Q_PROPERTY(QString historyCustomFromDate READ historyCustomFromDate WRITE setHistoryCustomFromDate NOTIFY historyUiChanged)
     Q_PROPERTY(bool historyCustomRangeEnabled READ historyCustomRangeEnabled WRITE setHistoryCustomRangeEnabled NOTIFY historyUiChanged)
     Q_PROPERTY(QString historyCustomToDate READ historyCustomToDate WRITE setHistoryCustomToDate NOTIFY historyUiChanged)
+    Q_PROPERTY(QVariantMap lastOrderStatus READ lastOrderStatus NOTIFY orderStatusChanged)
+    Q_PROPERTY(bool orderStatusLoading READ orderStatusLoading NOTIFY orderStatusChanged)
+    Q_PROPERTY(QString orderStatusError READ orderStatusError NOTIFY orderStatusChanged)
+    Q_PROPERTY(QVariantList priceChartCandles READ priceChartCandles NOTIFY priceChartChanged)
+    Q_PROPERTY(bool priceChartLoading READ priceChartLoading NOTIFY priceChartChanged)
+    Q_PROPERTY(QString priceChartError READ priceChartError NOTIFY priceChartChanged)
+    Q_PROPERTY(QString priceChartInterval READ priceChartInterval NOTIFY priceChartChanged)
+    Q_PROPERTY(int priceChartInstrumentId READ priceChartInstrumentId NOTIFY priceChartChanged)
+    Q_PROPERTY(int instrumentRestrictionsRevision READ instrumentRestrictionsRevision NOTIFY instrumentRestrictionsChanged)
+    Q_PROPERTY(int restrictionLookupInstrumentId READ restrictionLookupInstrumentId NOTIFY instrumentRestrictionsChanged)
+    Q_PROPERTY(bool restrictionLookupLoading READ restrictionLookupLoading NOTIFY instrumentRestrictionsChanged)
+    Q_PROPERTY(QString restrictionLookupError READ restrictionLookupError NOTIFY instrumentRestrictionsChanged)
 
 public:
     explicit EtoroClient(QObject *parent = nullptr);
@@ -112,6 +124,7 @@ public:
     bool locked() const;
     bool online() const;
     QString lastError() const;
+    QString successMessage() const;
     QString pinSettingsError() const;
     QVariantMap portfolioSummary() const;
     QVariantList openPositions() const;
@@ -132,6 +145,18 @@ public:
     bool historyLoading() const;
     QVariantMap selectedInstrumentQuote() const;
     bool selectedInstrumentQuoteLoading() const;
+    QVariantMap lastOrderStatus() const;
+    bool orderStatusLoading() const;
+    QString orderStatusError() const;
+    QVariantList priceChartCandles() const;
+    bool priceChartLoading() const;
+    QString priceChartError() const;
+    QString priceChartInterval() const;
+    int priceChartInstrumentId() const;
+    int instrumentRestrictionsRevision() const;
+    int restrictionLookupInstrumentId() const;
+    bool restrictionLookupLoading() const;
+    QString restrictionLookupError() const;
     bool pinEnabled() const;
 
     bool lockOnBackground() const;
@@ -140,6 +165,7 @@ public:
     bool portfolioShowFilter() const;
     bool portfolioShowSort() const;
     QString portfolioSortMode() const;
+    bool portfolioSortDescending() const;
     QString portfolioViewMode() const;
     QString portfolioFilterText() const;
 
@@ -207,6 +233,7 @@ public:
     Q_INVOKABLE void setPortfolioShowFilter(bool value);
     Q_INVOKABLE void setPortfolioShowSort(bool value);
     Q_INVOKABLE void setPortfolioSortMode(const QString &value);
+    Q_INVOKABLE void setPortfolioSortDescending(bool value);
     Q_INVOKABLE void setPortfolioViewMode(const QString &value);
     Q_INVOKABLE void setPortfolioFilterText(const QString &value);
 
@@ -258,6 +285,13 @@ public:
     Q_INVOKABLE bool prepareMarketOrder(const QVariantMap &order);
     Q_INVOKABLE bool closePosition(const QVariantMap &position, const QString &unitsToDeduct = QString());
     Q_INVOKABLE void clearLastError();
+    Q_INVOKABLE void clearSuccessMessage();
+    Q_INVOKABLE void refreshLastOrderStatus();
+    Q_INVOKABLE void clearLastOrderStatus();
+    Q_INVOKABLE void loadPriceChart(const QVariant &instrumentId,
+                                    const QString &interval = QStringLiteral("OneDay"),
+                                    int candleCount = 30);
+    Q_INVOKABLE void clearPriceChart();
 
     Q_INVOKABLE bool updatePositionProtection(const QVariantMap &position, const QVariantMap &protection);
 
@@ -276,6 +310,8 @@ public:
     Q_INVOKABLE QVariantMap currentWatchlistItemForInstrument(const QVariant &instrumentId) const;
 
     Q_INVOKABLE QVariantMap restrictionsForInstrument(const QVariant &instrumentId) const;
+    Q_INVOKABLE void refreshInstrumentRestrictions(const QVariant &instrumentId,
+                                                   const QString &symbol = QString());
 
 signals:
     void credentialsChanged();
@@ -283,6 +319,7 @@ signals:
     void lockedChanged();
     void onlineChanged();
     void lastErrorChanged();
+    void successMessageChanged();
     void pinSettingsErrorChanged();
     void portfolioSummaryChanged();
     void openPositionsChanged();
@@ -304,6 +341,8 @@ signals:
     void tradingModeChanged();
     void accountModeChanged();
     void positionCloseSubmitted();
+    void marketOrderSubmitted();
+    void marketOrderSubmissionFailed(const QString &message);
     void discoverResultsChanged();
     void watchlistItemAdded();
     void watchlistCreated(const QString &watchlistId, const QString &name);
@@ -314,6 +353,9 @@ signals:
     void discoverSearchTextChanged();
     void debugLoggingChanged();
     void instrumentWatchlistMatchesChanged();
+    void orderStatusChanged();
+    void priceChartChanged();
+    void instrumentRestrictionsChanged();
 
 private:
     enum MetadataTarget {
@@ -326,10 +368,18 @@ private:
 
     enum RatesTarget { RatesNone, RatesSelectedInstrument, RatesWatchlistItems, RatesPositions, RatesDiscover };
 
+    enum TradingOperation {
+        TradingNone,
+        TradingOpen,
+        TradingClose,
+        TradingProtection
+    };
+
     void setBusy(bool value);
     void setLocked(bool value);
     void setOnline(bool value);
     void setLastError(const QString &value);
+    void setSuccessMessage(const QString &value);
     void setPinSettingsError(const QString &value);
 
     void enrichOpenPositions(const QVariantMap &metadataById);
@@ -370,6 +420,9 @@ private:
     TokenStore m_tokenStore;
     QSettings m_settings;
     QNetworkAccessManager m_nam;
+    UiMessageController m_messageController;
+    OrderStatusController m_orderStatusController;
+    PriceChartController m_priceChartController;
     EtoroPortfolioService m_portfolioService;
     EtoroMarketService m_marketService;
     EtoroTradingService m_tradingService;
@@ -380,7 +433,6 @@ private:
     bool m_busy = false;
     bool m_locked = false;
     bool m_online = true;
-    QString m_lastError;
     QString m_pinSettingsError;
     QVariantMap m_portfolioSummary;
     QVariantList m_openPositions;
@@ -404,6 +456,7 @@ private:
     bool m_selectedInstrumentQuoteLoading = false;
     MetadataTarget m_metadataTarget = MetadataNone;
     RatesTarget m_ratesTarget = RatesNone;
+    TradingOperation m_tradingOperation = TradingNone;
 
     QVariantList m_groupedOpenPositions;
 
@@ -425,6 +478,10 @@ private:
     void loadNextWatchlistForInstrumentLookup();
 
     QVariantMap m_instrumentRestrictionsById;
+    int m_instrumentRestrictionsRevision = 0;
+    int m_restrictionLookupInstrumentId = 0;
+    bool m_restrictionLookupLoading = false;
+    QString m_restrictionLookupError;
 };
 
 #endif // ETOROCLIENT_H

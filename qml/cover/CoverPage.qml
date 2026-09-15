@@ -18,6 +18,7 @@
 */
 import QtQuick 2.0
 import Sailfish.Silica 1.0
+import "../js/AssetUtils.js" as AssetUtils
 
 CoverBackground {
     id: cover
@@ -26,15 +27,6 @@ CoverBackground {
 
     function amountText(value, decimals) {
         return Number(value || 0).toLocaleString(Qt.locale(), 'f', decimals)
-    }
-
-    function instrumentIcon50(instrumentId) {
-        if (instrumentId === undefined || instrumentId === null || instrumentId === "")
-            return ""
-
-        return "https://etoro-cdn.etorostatic.com/market-avatars/"
-                + String(instrumentId)
-                + "/50x50.png"
     }
 
     // Unlocked content
@@ -182,7 +174,7 @@ CoverBackground {
                             width: 40
                             height: 40
                             fillMode: Image.PreserveAspectFit
-                            source: instrumentIcon50(etoroClient.topPositions[index].instrumentId)
+                            source: AssetUtils.icon50(etoroClient.topPositions[index].instrumentId)
                         }
                     }
                 }

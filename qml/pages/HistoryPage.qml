@@ -18,6 +18,7 @@
 */
 import QtQuick 2.0
 import Sailfish.Silica 1.0
+import "../js/AssetUtils.js" as AssetUtils
 import "../components"
 
 Page {
@@ -90,14 +91,6 @@ Page {
         etoroClient.refreshTradeHistoryFrom(minDateIso)
     }
 
-    function profitPercent(item) {
-        var invested = Number(item.investment || 0)
-        var pnl = Number(item.netProfit || 0)
-        if (invested === 0)
-            return 0
-        return (pnl / invested) * 100.0
-    }
-
     function netValue(item) {
         return Number(item.investment || 0) + Number(item.netProfit || 0)
     }
@@ -112,15 +105,6 @@ Page {
             return name
 
         return name.slice(0, 6)
-    }
-
-    function instrumentIcon50(instrumentId) {
-        if (instrumentId === undefined || instrumentId === null || instrumentId === "")
-            return ""
-
-        return "https://etoro-cdn.etorostatic.com/market-avatars/"
-                + String(instrumentId)
-                + "/50x50.png"
     }
 
     function applyFilterNow() {
@@ -552,7 +536,7 @@ Page {
 
                                     Image {
                                         id: logoImage
-                                        source: instrumentIcon50(modelData.instrumentId)
+                                        source: AssetUtils.icon50(modelData.instrumentId)
                                         width: 50
                                         height: 50
                                         fillMode: Image.PreserveAspectFit
@@ -592,7 +576,7 @@ Page {
 
                             Label {
                                 width: parent.width * 0.18
-                                text: amountText(profitPercent(modelData), 1)
+                                text: amountText(AssetUtils.profitPercent(modelData), 1)
                                 color: Number(modelData.netProfit || 0) >= 0 ? Theme.highlightColor : Theme.errorColor
                                 font.pixelSize: Theme.fontSizeSmall
                                 horizontalAlignment: Text.AlignRight

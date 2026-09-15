@@ -18,6 +18,7 @@
 */
 import QtQuick 2.0
 import Sailfish.Silica 1.0
+import "../js/AssetUtils.js" as AssetUtils
 
 Page {
     id: page
@@ -39,14 +40,6 @@ Page {
         return Qt.formatDateTime(d, "dd MMM yyyy hh:mm")
     }
 
-    function profitPercent() {
-        var invested = Number(tradeData.investment || 0)
-        var pnl = Number(tradeData.netProfit || 0)
-        if (invested === 0)
-            return 0
-        return (pnl / invested) * 100.0
-    }
-
     function netValue() {
         return Number(tradeData.investment || 0) + Number(tradeData.netProfit || 0)
     }
@@ -55,15 +48,6 @@ Page {
         if (value === undefined || value === null || value === "")
             return "—"
         return amountText(value, decimals)
-    }
-
-    function instrumentIcon50(instrumentId) {
-        if (instrumentId === undefined || instrumentId === null || instrumentId === "")
-            return ""
-
-        return "https://etoro-cdn.etorostatic.com/market-avatars/"
-                + String(instrumentId)
-                + "/50x50.png"
     }
 
     SilicaFlickable {
@@ -128,7 +112,7 @@ Page {
 
                         Image {
                             id: logoImage
-                            source: instrumentIcon50(page.tradeData.instrumentId)
+                            source: AssetUtils.icon50(page.tradeData.instrumentId)
                             width: 150
                             height: 150
                             fillMode: Image.PreserveAspectFit
@@ -148,7 +132,7 @@ Page {
 
                             Label {
                                 width: parent.width
-                                text: page.tradeData.displayName || (qsTr("Instrument ") + page.tradeData.instrumentId)
+                                text: page.tradeData.displayName || (qsTr("Asset ") + page.tradeData.instrumentId)
                                 color: Theme.secondaryColor
                                 font.pixelSize: Theme.fontSizeSmall
                                 truncationMode: TruncationMode.Fade
@@ -202,7 +186,7 @@ Page {
 
                         Label {
                             width: parent.width * 0.66 - Theme.paddingMedium
-                            text: amountText(profitPercent(), 1) + "%"
+                            text: amountText(AssetUtils.profitPercent(page.tradeData), 1) + "%"
                             color: Number(page.tradeData.netProfit || 0) >= 0 ? Theme.highlightColor : Theme.errorColor
                             font.pixelSize: Theme.fontSizeSmall
                             horizontalAlignment: Text.AlignRight
